@@ -1,0 +1,16 @@
+{
+  "num_students": 10,
+  "successful_exams": 10,
+  "failed_exams": 0,
+  "completion_rate_percent": 100.0,
+  "total_requests": 100,
+  "duration_seconds": 0.19,
+  "throughput_req_per_sec": 529.98,
+  "latency_avg_ms": 2.94,
+  "latency_p50_ms": 1.877,
+  "latency_p95_ms": 11.852,
+  "latency_p99_ms": 14.011,
+  "latency_min_ms": 0.23,
+  "latency_max_ms": 15.24,
+  "jains_fairness_index": 0.9942
+}

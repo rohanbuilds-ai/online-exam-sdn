@@ -14,21 +14,21 @@ Under network congestion (background traffic saturating the 10 Mbps bottleneck l
 
 | Students | Metric | Baseline (Static SDN) | Dynamic SDN (Adaptive QoS) | Improvement |
 |---|---|---|---|---|
-| 5 | Average Response Latency | 225.5 ms | 26.73 ms | **-88.1%** |
-| 5 | P95 Response Latency | 296.419 ms | 31.696 ms | **-89.3%** |
-| 5 | Throughput (req/s) | 5.5 rps | 13.75 rps | **+150.0%** |
-| 5 | Packet Loss | 7.8% | 0.0% | **100% Eliminated** |
-| 5 | Jain's Fairness Index | 0.9462 | 0.9899 | **+0.0437** |
-| 10 | Average Response Latency | 289.54 ms | 30.15 ms | **-89.6%** |
-| 10 | P95 Response Latency | 391.089 ms | 35.93 ms | **-90.8%** |
-| 10 | Throughput (req/s) | 11.0 rps | 27.5 rps | **+150.0%** |
-| 10 | Packet Loss | 11.0% | 0.0% | **100% Eliminated** |
-| 10 | Jain's Fairness Index | 0.9449 | 0.9834 | **+0.0385** |
-| 20 | Average Response Latency | 445.97 ms | 36.64 ms | **-91.8%** |
-| 20 | P95 Response Latency | 586.814 ms | 43.674 ms | **-92.6%** |
-| 20 | Throughput (req/s) | 22.0 rps | 55.0 rps | **+150.0%** |
-| 20 | Packet Loss | 17.5% | 0.0% | **100% Eliminated** |
-| 20 | Jain's Fairness Index | 0.9457 | 0.9917 | **+0.0460** |
+| 5 | Average Response Latency | 1.17 ms | 1.9 ms | **--62.4%** |
+| 5 | P95 Response Latency | 4.258 ms | 4.015 ms | **-5.7%** |
+| 5 | Throughput (req/s) | 354.17 rps | 330.68 rps | **+-6.6%** |
+| 5 | Packet Loss | 0.0% | 0.0% | **100% Eliminated** |
+| 5 | Jain's Fairness Index | 0.9355 | 0.9963 | **+0.0608** |
+| 10 | Average Response Latency | 1.38 ms | 2.97 ms | **--115.2%** |
+| 10 | P95 Response Latency | 4.429 ms | 9.756 ms | **--120.3%** |
+| 10 | Throughput (req/s) | 677.61 rps | 562.72 rps | **+-17.0%** |
+| 10 | Packet Loss | 0.0% | 0.0% | **100% Eliminated** |
+| 10 | Jain's Fairness Index | 0.9054 | 0.9943 | **+0.0889** |
+| 20 | Average Response Latency | 4.66 ms | 5.16 ms | **--10.7%** |
+| 20 | P95 Response Latency | 18.486 ms | 18.51 ms | **--0.1%** |
+| 20 | Throughput (req/s) | 820.53 rps | 907.65 rps | **+10.6%** |
+| 20 | Packet Loss | 0.0% | 0.0% | **100% Eliminated** |
+| 20 | Jain's Fairness Index | 0.9402 | 0.9894 | **+0.0492** |
 
 ## 3. Visual Charts
 

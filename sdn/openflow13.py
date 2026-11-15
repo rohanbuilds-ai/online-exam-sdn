@@ -250,7 +250,7 @@ def pack_flow_mod(
 
 def pack_port_stats_request(xid: int, port_no: int = OFPP_ANY) -> bytes:
     """Pack OFPT_MULTIPART_REQUEST for OFPMP_PORT_STATS (type 4)."""
-    body = struct.pack("!HH4xII4x", OFPMP_PORT_STATS, 0, port_no, 0)
+    body = struct.pack("!HH4xI4x", OFPMP_PORT_STATS, 0, port_no)
     return pack_header(OFPT_MULTIPART_REQUEST, xid, len(body)) + body
 
 

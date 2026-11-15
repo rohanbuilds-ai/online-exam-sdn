@@ -67,6 +67,7 @@ class TestOpenFlow13(unittest.TestCase):
         req = pack_port_stats_request(xid=99)
         version, msg_type, length, xid = unpack_header(req)
         self.assertEqual(msg_type, OFPT_MULTIPART_REQUEST)
+        self.assertEqual(length, 24)
 
         # Build synthetic OFPMP_PORT_STATS reply
         # 8-byte multipart header: mp_type=4, flags=0, pad=0

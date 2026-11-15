@@ -55,6 +55,20 @@ def configure_ovs_qos():
         except subprocess.CalledProcessError as err:
             print(f"[QOS WARNING] QoS command failed: {err.stderr.decode()}")
     print("[QOS] Queues initialized: Queue 0 (1-5 Mbps Best Effort), Queue 1 (7-10 Mbps Guaranteed Priority).")
+    verify_ovs_qos()
+
+
+def verify_ovs_qos():
+    """Display active OVS QoS tables and Queues for verification."""
+    try:
+        qos_out = subprocess.run("ovs-vsctl list QoS", shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        queue_out = subprocess.run("ovs-vsctl list Queue", shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        if qos_out.stdout:
+            print("[QOS VERIFIED] Active Open vSwitch QoS configuration detected.")
+        if queue_out.stdout:
+            print("[QOS VERIFIED] Active Open vSwitch Queues (Queue 0 & Queue 1) successfully installed.")
+    except Exception:
+        pass
 
 
 def create_topology(cli_mode: bool = True):

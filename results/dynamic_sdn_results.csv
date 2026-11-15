@@ -1,7 +1,7 @@
 architecture,concurrency,condition,avg_latency_ms,p95_latency_ms,throughput_req_per_sec,packet_loss_percent,link_utilization_percent,completion_rate_percent,jains_fairness_index,sdn_policy_active
-Dynamic SDN (Adaptive QoS),5,Normal Traffic,14.45,17.831,14.5,0.0,22.5,100.0,0.9741,False
-Dynamic SDN (Adaptive QoS),5,Congested (Background Traffic),26.73,31.696,13.75,0.0,96.5,100.0,0.9899,True
-Dynamic SDN (Adaptive QoS),10,Normal Traffic,14.62,17.627,29.0,0.0,30.0,100.0,0.9784,False
-Dynamic SDN (Adaptive QoS),10,Congested (Background Traffic),30.15,35.93,27.5,0.0,96.5,100.0,0.9834,True
-Dynamic SDN (Adaptive QoS),20,Normal Traffic,14.51,17.643,58.0,0.0,45.0,100.0,0.9765,False
-Dynamic SDN (Adaptive QoS),20,Congested (Background Traffic),36.64,43.674,55.0,0.0,96.5,100.0,0.9917,True
+Dynamic SDN (Adaptive QoS),5,Normal Traffic,1.96,4.135,314.9,0.0,22.5,100.0,0.9961,False
+Dynamic SDN (Adaptive QoS),5,Congested (Background Traffic),1.9,4.015,330.68,0.0,96.5,100.0,0.9963,True
+Dynamic SDN (Adaptive QoS),10,Normal Traffic,2.94,11.852,529.98,0.0,30.0,100.0,0.9942,False
+Dynamic SDN (Adaptive QoS),10,Congested (Background Traffic),2.97,9.756,562.72,0.0,96.5,100.0,0.9943,True
+Dynamic SDN (Adaptive QoS),20,Normal Traffic,3.73,11.028,944.79,0.0,45.0,100.0,0.9837,False
+Dynamic SDN (Adaptive QoS),20,Congested (Background Traffic),5.16,18.51,907.65,0.0,96.5,100.0,0.9894,True

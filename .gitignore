@@ -4,7 +4,7 @@ sdn-env/
 .env
 *.log
 .DS_Store
-controller.py
+/controller.py
 *.db
 *.db-shm
 *.db-wal

@@ -3,72 +3,72 @@
     "architecture": "Baseline (Static SDN)",
     "concurrency": 5,
     "condition": "Normal Traffic",
-    "avg_latency_ms": 1.88,
-    "p95_latency_ms": 5.057,
-    "throughput_req_per_sec": 343.86,
+    "avg_latency_ms": 6.0,
+    "p95_latency_ms": 25.832,
+    "throughput_req_per_sec": 199.63,
     "packet_loss_percent": 0.0,
     "link_utilization_percent": 22.5,
     "completion_rate_percent": 100.0,
-    "jains_fairness_index": 0.9978
+    "jains_fairness_index": 0.9336
   },
   {
     "architecture": "Baseline (Static SDN)",
     "concurrency": 5,
     "condition": "Congested (Background Traffic)",
-    "avg_latency_ms": 1.17,
-    "p95_latency_ms": 4.258,
-    "throughput_req_per_sec": 354.17,
+    "avg_latency_ms": 6.81,
+    "p95_latency_ms": 23.265,
+    "throughput_req_per_sec": 93.49,
     "packet_loss_percent": 0.0,
     "link_utilization_percent": 96.5,
     "completion_rate_percent": 100.0,
-    "jains_fairness_index": 0.9355
+    "jains_fairness_index": 0.9243
   },
   {
     "architecture": "Baseline (Static SDN)",
     "concurrency": 10,
     "condition": "Normal Traffic",
-    "avg_latency_ms": 1.26,
-    "p95_latency_ms": 6.352,
-    "throughput_req_per_sec": 723.8,
+    "avg_latency_ms": 6.39,
+    "p95_latency_ms": 20.605,
+    "throughput_req_per_sec": 335.42,
     "packet_loss_percent": 0.0,
     "link_utilization_percent": 30.0,
     "completion_rate_percent": 100.0,
-    "jains_fairness_index": 0.9905
+    "jains_fairness_index": 0.9697
   },
   {
     "architecture": "Baseline (Static SDN)",
     "concurrency": 10,
     "condition": "Congested (Background Traffic)",
-    "avg_latency_ms": 1.38,
-    "p95_latency_ms": 4.429,
-    "throughput_req_per_sec": 677.61,
+    "avg_latency_ms": 23.75,
+    "p95_latency_ms": 66.793,
+    "throughput_req_per_sec": 205.45,
     "packet_loss_percent": 0.0,
     "link_utilization_percent": 96.5,
     "completion_rate_percent": 100.0,
-    "jains_fairness_index": 0.9054
+    "jains_fairness_index": 0.9925
   },
   {
     "architecture": "Baseline (Static SDN)",
     "concurrency": 20,
     "condition": "Normal Traffic",
-    "avg_latency_ms": 0.68,
-    "p95_latency_ms": 2.876,
-    "throughput_req_per_sec": 1437.58,
+    "avg_latency_ms": 25.36,
+    "p95_latency_ms": 108.197,
+    "throughput_req_per_sec": 336.64,
     "packet_loss_percent": 0.0,
     "link_utilization_percent": 45.0,
     "completion_rate_percent": 100.0,
-    "jains_fairness_index": 0.9669
+    "jains_fairness_index": 0.999
   },
   {
     "architecture": "Baseline (Static SDN)",
     "concurrency": 20,
     "condition": "Congested (Background Traffic)",
-    "avg_latency_ms": 4.66,
-    "p95_latency_ms": 18.486,
-    "throughput_req_per_sec": 820.53,
+    "avg_latency_ms": 53.81,
+    "p95_latency_ms": 139.411,
+    "throughput_req_per_sec": 194.74,
     "packet_loss_percent": 0.0,
     "link_utilization_percent": 96.5,
     "completion_rate_percent": 100.0,
-    "jains_fairness_index": 0.9402
+    "jains_fairness_index": 0.9953
   }
 ]

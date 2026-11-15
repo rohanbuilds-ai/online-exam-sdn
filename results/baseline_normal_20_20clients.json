@@ -4,13 +4,13 @@
   "failed_exams": 0,
   "completion_rate_percent": 100.0,
   "total_requests": 200,
-  "duration_seconds": 0.14,
-  "throughput_req_per_sec": 1437.58,
-  "latency_avg_ms": 0.68,
-  "latency_p50_ms": 0.529,
-  "latency_p95_ms": 2.876,
-  "latency_p99_ms": 3.848,
-  "latency_min_ms": 0.08,
-  "latency_max_ms": 4.27,
-  "jains_fairness_index": 0.9669
+  "duration_seconds": 0.59,
+  "throughput_req_per_sec": 336.64,
+  "latency_avg_ms": 25.36,
+  "latency_p50_ms": 17.343,
+  "latency_p95_ms": 108.197,
+  "latency_p99_ms": 118.322,
+  "latency_min_ms": 0.06,
+  "latency_max_ms": 127.95,
+  "jains_fairness_index": 0.999
 }

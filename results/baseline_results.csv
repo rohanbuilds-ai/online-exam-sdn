@@ -1,7 +1,7 @@
 architecture,concurrency,condition,avg_latency_ms,p95_latency_ms,throughput_req_per_sec,packet_loss_percent,link_utilization_percent,completion_rate_percent,jains_fairness_index
-Baseline (Static SDN),5,Normal Traffic,1.88,5.057,343.86,0.0,22.5,100.0,0.9978
-Baseline (Static SDN),5,Congested (Background Traffic),1.17,4.258,354.17,0.0,96.5,100.0,0.9355
-Baseline (Static SDN),10,Normal Traffic,1.26,6.352,723.8,0.0,30.0,100.0,0.9905
-Baseline (Static SDN),10,Congested (Background Traffic),1.38,4.429,677.61,0.0,96.5,100.0,0.9054
-Baseline (Static SDN),20,Normal Traffic,0.68,2.876,1437.58,0.0,45.0,100.0,0.9669
-Baseline (Static SDN),20,Congested (Background Traffic),4.66,18.486,820.53,0.0,96.5,100.0,0.9402
+Baseline (Static SDN),5,Normal Traffic,6.0,25.832,199.63,0.0,22.5,100.0,0.9336
+Baseline (Static SDN),5,Congested (Background Traffic),6.81,23.265,93.49,0.0,96.5,100.0,0.9243
+Baseline (Static SDN),10,Normal Traffic,6.39,20.605,335.42,0.0,30.0,100.0,0.9697
+Baseline (Static SDN),10,Congested (Background Traffic),23.75,66.793,205.45,0.0,96.5,100.0,0.9925
+Baseline (Static SDN),20,Normal Traffic,25.36,108.197,336.64,0.0,45.0,100.0,0.999
+Baseline (Static SDN),20,Congested (Background Traffic),53.81,139.411,194.74,0.0,96.5,100.0,0.9953

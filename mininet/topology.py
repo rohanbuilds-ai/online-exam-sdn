@@ -34,7 +34,7 @@ try:
 except ImportError:
     MININET_AVAILABLE = False
 
-from mininet.network_config import (
+from network_config import (
     CONTROLLER_IP,
     CONTROLLER_PORT,
     OPENFLOW_VERSION,

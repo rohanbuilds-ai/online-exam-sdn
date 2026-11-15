@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![OpenFlow 1.3](https://img.shields.io/badge/OpenFlow-1.3-orange.svg)](https://www.opennetworking.org/)
 [![Mininet](https://img.shields.io/badge/Mininet-2.3%2B-green.svg)](http://mininet.org/)
-[![Tests](https://img.shields.io/badge/Tests-23%2F23%20Passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-36%2F36%20Passing-brightgreen.svg)](tests/)
 [![Rubric Score](https://img.shields.io/badge/Rubric%20Score-40%2F40%20(100%25)-success.svg)](docs/rubric_traceability.md)
 
 An end-to-end, multi-tier Software-Defined Networking (SDN) system that manages and prioritizes online examination traffic under severe network congestion. Features concurrent multithreaded TCP socket clients, a server-authoritative countdown timer, persistent SQLite result evaluation, an OpenFlow 1.3 SDN controller with real-time port telemetry, and dynamic QoS traffic prioritization.
@@ -81,6 +81,21 @@ flowchart TB
 | **h5** | `10.0.0.5/24` | `00:00:00:00:00:05` | `s1-eth5` (Port 5) | Background Congestion Traffic Generator (iperf) |
 | **s1** | — | — | — | OpenFlow 1.3 Open vSwitch with Linux HTB Queues |
 | **c0** | `127.0.0.1:6653` | — | — | Custom Python OpenFlow 1.3 SDN Controller |
+
+### 3.1 Interactive Web Prototype & Portals
+
+The project includes a complete modern web prototype bridging browser clients to the stateful TCP examination daemon:
+- **Student Examination Portal** (`http://localhost:5173`): Login presets, instructions, question navigator grid, real-time server-authoritative countdown, confirmation modal, and instant official scorecards.
+- **Administration Dashboard** (`http://localhost:5173/admin`): Real-time active TCP socket oversight, protected by `X-Admin-Key` header, persistent SQLite results table with search and pass/fail filters.
+- **SDN Network Operations Center** (`http://localhost:5173/sdn`): Interactive SVG Mininet topology diagram, live controller/switch telemetry, dynamic QoS queue states, and Recharts latency/throughput/fairness benchmark comparison charts.
+- **FastAPI Web Adapter Gateway** (`http://localhost:8000/docs`): Bridges stateless HTTP/WebSocket requests to persistent TCP stream sockets without compromising exam authority.
+
+**Windows One-Click Launcher:**
+```cmd
+scripts\run_prototype_windows.bat
+```
+*(Select Option `[5]` to launch TCP Server, FastAPI Gateway, and React Frontend in dedicated console windows).*
+To cleanly terminate running prototype processes: `scripts\stop_prototype_windows.bat`.
 
 ---
 
@@ -295,7 +310,7 @@ We conducted repeatable controlled experiments comparing the **Baseline (Static 
 
 ## 10. Automated Testing Strategy
 
-The project includes 23 unit, concurrency, and protocol test cases across 6 test modules:
+The project includes 36 unit, concurrency, protocol, controller, and web gateway test cases across 9 test modules:
 
 ```bash
 python -m unittest discover -s tests -v
@@ -312,15 +327,20 @@ python -m unittest discover -s tests -v
 | `tests/test_openflow.py` | OpenFlow 1.3 packing, unpacking, flow mods, port stats | **PASS (5/5)** |
 | `tests/test_congestion.py` | Telemetry rate calculation, threshold state transitions | **PASS (2/2)** |
 | `tests/test_server.py` | 5 simultaneous TCP clients concurrent execution | **PASS (2/2)** |
-| **TOTAL** | **Comprehensive Codebase Verification** | **23/23 PASSED** |
+| `tests/test_controller.py` | SwitchConnection lifecycle, packet-in, flow installation | **PASS (5/5)** |
+| `tests/test_api.py` | FastAPI gateway, session store, admin key auth, E2E exam | **PASS (8/8)** |
+| **TOTAL** | **Comprehensive Codebase & Gateway Verification** | **36/36 PASSED** |
 
 ---
 
-## 11. Rubric Traceability & Viva Defense
+## 11. Demonstration, Deployment & Architecture Guides
 
+- **Final Demonstration Guide**: See [docs/FINAL_DEMO_GUIDE.md](docs/FINAL_DEMO_GUIDE.md) for the complete 11-step presentation script.
+- **Ubuntu Mininet Deployment**: See [docs/MININET_DEPLOYMENT.md](docs/MININET_DEPLOYMENT.md) for live Linux VM deployment and OVS flow verification.
+- **Web Prototype Architecture**: See [docs/WEB_PROTOTYPE_ARCHITECTURE.md](docs/WEB_PROTOTYPE_ARCHITECTURE.md) for details on the FastAPI-to-TCP adapter and React UI.
 - **40-Mark Rubric Traceability Matrix**: See [docs/rubric_traceability.md](docs/rubric_traceability.md) for full mapping to project requirements.
-- **Viva Defense & Interview Notes**: See [docs/viva_guide.md](docs/viva_guide.md) for detailed networking theory, concept breakdowns, and the top 15 viva questions and answers.
-- **Detailed Architecture**: See [docs/architecture.md](docs/architecture.md).
+- **Viva Defense & Interview Notes**: See [docs/viva_guide.md](docs/viva_guide.md) for detailed networking theory and top 15 viva questions.
+- **Detailed Core Architecture**: See [docs/architecture.md](docs/architecture.md).
 
 ---
 

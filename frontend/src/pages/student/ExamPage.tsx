@@ -114,10 +114,11 @@ export const ExamPage: React.FC = () => {
         selected_option: selectedOption,
       })
 
-      // Record answer locally
+      // Record answer locally by ID and Number
       setAnsweredMap((prev) => ({
         ...prev,
         [currentQuestion.question_id]: selectedOption,
+        [currentQuestion.number]: selectedOption,
       }))
 
       if (ack.remaining_seconds !== undefined && ack.remaining_seconds > 0) {
@@ -205,7 +206,17 @@ export const ExamPage: React.FC = () => {
 
       {error && (
         <Alert variant="danger" title="Examination System Notice">
-          {error}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <span className="text-xs">{error}</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button size="sm" variant="outline" onClick={loadCurrentQuestion}>
+                Retry Question
+              </Button>
+              <Button size="sm" variant="danger" onClick={() => handleFinalSubmit("COMPLETED")}>
+                Retry Submit
+              </Button>
+            </div>
+          </div>
         </Alert>
       )}
 
@@ -334,28 +345,37 @@ export const ExamPage: React.FC = () => {
             <div className="grid grid-cols-5 gap-2 my-2">
               {Array.from({ length: totalQuestions }, (_, i) => i + 1).map((num) => {
                 const isCurrent = currentQuestion?.number === num
-                // Check if this question number is answered
-                const isAnswered = currentQuestion?.number === num
-                  ? selectedOption !== null
-                  : (cachedQuestions[num] && answeredMap[cachedQuestions[num].question_id] !== undefined)
+                const isAnswered = answeredMap[num] !== undefined || (cachedQuestions[num] && answeredMap[cachedQuestions[num].question_id] !== undefined)
+                const isAccessible = cachedQuestions[num] !== undefined || isCurrent
 
                 return (
                   <button
                     key={num}
                     type="button"
+                    disabled={!isAccessible}
                     onClick={() => {
-                      // Reload question if in cache
                       if (cachedQuestions[num]) {
                         setCurrentQuestion(cachedQuestions[num])
-                        setSelectedOption(answeredMap[cachedQuestions[num].question_id] || null)
+                        setSelectedOption(answeredMap[cachedQuestions[num].question_id] ?? answeredMap[num] ?? null)
                       }
                     }}
+                    title={
+                      isCurrent
+                        ? `Question ${num} (Currently Active)`
+                        : isAnswered
+                        ? `Question ${num} (Answered)`
+                        : isAccessible
+                        ? `Question ${num} (Pending Answer)`
+                        : `Question ${num} (Upcoming - Answer current question)`
+                    }
                     className={`h-9 rounded-lg font-bold text-xs flex items-center justify-center transition-all ${
                       isCurrent
-                        ? "bg-indigo-600 text-white ring-2 ring-indigo-400 ring-offset-1"
+                        ? "bg-indigo-600 text-white ring-2 ring-indigo-400 ring-offset-1 shadow-xs"
                         : isAnswered
-                        ? "bg-emerald-100 border border-emerald-300 text-emerald-800"
-                        : "bg-slate-100 border border-slate-200 text-slate-600 hover:bg-slate-200"
+                        ? "bg-emerald-100 border border-emerald-300 text-emerald-800 hover:bg-emerald-200"
+                        : isAccessible
+                        ? "bg-slate-100 border border-slate-300 text-slate-700 hover:bg-slate-200"
+                        : "bg-slate-50 border border-slate-200 text-slate-400 cursor-not-allowed opacity-60"
                     }`}
                   >
                     {num}

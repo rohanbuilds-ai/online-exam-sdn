@@ -300,12 +300,26 @@ def exam_ping(
 
 
 # ===========================================================================
-# Admin endpoints
+# Admin endpoints (protected by X-Admin-Key)
 # ===========================================================================
 
+def _require_admin(x_admin_key: Optional[str] = Header(default=None, alias="X-Admin-Key")) -> None:
+    """Validate administrative authorization header if REQUIRE_ADMIN_AUTH is enabled."""
+    if not config.REQUIRE_ADMIN_AUTH:
+        return
+    if not x_admin_key or x_admin_key != config.ADMIN_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "Administrative access forbidden: invalid or missing X-Admin-Key header."},
+        )
+
+
 @app.get("/api/admin/results", status_code=status.HTTP_200_OK)
-def admin_results() -> Any:
+def admin_results(
+    x_admin_key: Optional[str] = Header(default=None, alias="X-Admin-Key"),
+) -> Any:
     """Return all completed exam results from the persistent SQLite store."""
+    _require_admin(x_admin_key)
     if _exam_storage is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -315,8 +329,11 @@ def admin_results() -> Any:
 
 
 @app.get("/api/admin/stats", status_code=status.HTTP_200_OK)
-def admin_stats() -> Dict[str, Any]:
+def admin_stats(
+    x_admin_key: Optional[str] = Header(default=None, alias="X-Admin-Key"),
+) -> Dict[str, Any]:
     """Return summary statistics plus the current active session count."""
+    _require_admin(x_admin_key)
     if _exam_storage is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -328,8 +345,11 @@ def admin_stats() -> Dict[str, Any]:
 
 
 @app.get("/api/admin/sessions", status_code=status.HTTP_200_OK)
-def admin_sessions() -> Any:
+def admin_sessions(
+    x_admin_key: Optional[str] = Header(default=None, alias="X-Admin-Key"),
+) -> Any:
     """Return metadata for all currently active gateway sessions."""
+    _require_admin(x_admin_key)
     return session_store.list_active()
 
 

@@ -135,13 +135,26 @@ export const NetworkMonitor: React.FC = () => {
                 Live Telemetry Active
               </Badge>
             ) : (
-              <Badge variant="warning" className="gap-1.5 py-1 px-3">
-                <WifiOff className="h-3.5 w-3.5" />
+              <Badge variant="neutral" className="gap-1.5 py-1 px-3">
+                <WifiOff className="h-3.5 w-3.5 text-slate-500" />
                 Controller Standby / Offline
               </Badge>
             )}
           </div>
         </div>
+
+        {/* Telemetry Standby Alert when Controller is not running */}
+        {!isLive && (
+          <div className="p-3.5 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-700 flex items-start gap-2.5">
+            <WifiOff className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-bold text-slate-900">SDN Controller Standby State:</span>
+              <p className="text-slate-600">
+                The OpenFlow 1.3 controller is not currently active. The diagram below illustrates the architectural Mininet topology. Dynamic queue switching, port bandwidth polling, and event logs will stream automatically when the controller is running in Ubuntu Mininet.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Live Topology SVG Map */}
         <Card className="overflow-hidden border-slate-200">
@@ -166,15 +179,15 @@ export const NetworkMonitor: React.FC = () => {
                   width="160"
                   height="50"
                   rx="10"
-                  fill="#1E1B4B"
-                  stroke="#4F46E5"
+                  fill={isLive ? "#1E1B4B" : "#1E293B"}
+                  stroke={isLive ? "#4F46E5" : "#64748B"}
                   strokeWidth="2"
                 />
                 <text x="80" y="26" textAnchor="middle" fill="#FFFFFF" fontSize="12" fontWeight="bold">
                   SDN Controller c0
                 </text>
-                <text x="80" y="40" textAnchor="middle" fill="#818CF8" fontSize="10" fontFamily="monospace">
-                  127.0.0.1:6653
+                <text x="80" y="40" textAnchor="middle" fill={isLive ? "#818CF8" : "#94A3B8"} fontSize="10" fontFamily="monospace">
+                  {isLive ? "127.0.0.1:6653 (Active)" : "127.0.0.1:6653 (Standby)"}
                 </text>
               </g>
 
@@ -184,12 +197,12 @@ export const NetworkMonitor: React.FC = () => {
                 y1="65"
                 x2="400"
                 y2="120"
-                stroke="#6366F1"
+                stroke={isLive ? "#6366F1" : "#475569"}
                 strokeWidth="2"
                 strokeDasharray="4 4"
               />
-              <text x="410" y="95" fill="#A5B4FC" fontSize="10">
-                OpenFlow 1.3 Control Channel
+              <text x="410" y="95" fill={isLive ? "#A5B4FC" : "#64748B"} fontSize="10">
+                {isLive ? "OpenFlow 1.3 Control Channel" : "Control Channel (Standby)"}
               </text>
 
               {/* Open vSwitch s1 in Center */}
@@ -199,7 +212,7 @@ export const NetworkMonitor: React.FC = () => {
                   height="70"
                   rx="12"
                   fill="#0F172A"
-                  stroke={isCongested ? "#F43F5E" : "#10B981"}
+                  stroke={!isLive ? "#64748B" : isCongested ? "#F43F5E" : "#10B981"}
                   strokeWidth="2"
                 />
                 <text x="80" y="30" textAnchor="middle" fill="#FFFFFF" fontSize="13" fontWeight="bold">
@@ -212,11 +225,15 @@ export const NetworkMonitor: React.FC = () => {
                   x="80"
                   y="62"
                   textAnchor="middle"
-                  fill={isCongested ? "#FDA4AF" : "#6EE7B7"}
+                  fill={!isLive ? "#94A3B8" : isCongested ? "#FDA4AF" : "#6EE7B7"}
                   fontSize="9"
                   fontWeight="bold"
                 >
-                  {isCongested ? "★ Dynamic QoS: Queue 1" : "● Standard QoS: Queue 0"}
+                  {!isLive
+                    ? "○ Standby: Default Queue 0"
+                    : isCongested
+                    ? "★ Dynamic QoS: Queue 1"
+                    : "● Standard QoS: Queue 0"}
                 </text>
               </g>
 
@@ -244,8 +261,8 @@ export const NetworkMonitor: React.FC = () => {
                 y1="155"
                 x2="320"
                 y2="155"
-                stroke={isCongested ? "#F43F5E" : "#10B981"}
-                strokeWidth={isCongested ? "4" : "3"}
+                stroke={!isLive ? "#64748B" : isCongested ? "#F43F5E" : "#10B981"}
+                strokeWidth={isCongested ? "4" : "2.5"}
               />
               <rect
                 x="200"
@@ -321,7 +338,7 @@ export const NetworkMonitor: React.FC = () => {
                 y2="255"
                 stroke="#FB7185"
                 strokeWidth="2"
-                strokeDasharray={isCongested ? "3 3" : undefined}
+                strokeDasharray={isLive && isCongested ? "3 3" : undefined}
               />
             </svg>
           </div>
@@ -336,14 +353,16 @@ export const NetworkMonitor: React.FC = () => {
                 <Cpu className="h-4 w-4 text-indigo-600" />
                 <CardTitle className="text-sm font-bold">Controller Link Status</CardTitle>
               </div>
-              <Badge variant={telemetry.controller_connected ? "success" : "neutral"}>
-                {telemetry.controller_connected ? "Online" : "Standby"}
+              <Badge variant={isLive ? "success" : "neutral"}>
+                {isLive ? "Online" : "Standby"}
               </Badge>
             </CardHeader>
             <div className="space-y-2 text-xs">
               <div className="flex justify-between py-1 border-b border-slate-100">
                 <span className="text-slate-500">Connected Switches:</span>
-                <span className="font-bold text-slate-900">{telemetry.switch_count}</span>
+                <span className="font-bold text-slate-900">
+                  {isLive ? telemetry.switch_count : "— (Standby)"}
+                </span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-100">
                 <span className="text-slate-500">Control Protocol:</span>
@@ -365,14 +384,14 @@ export const NetworkMonitor: React.FC = () => {
               </div>
               <Badge
                 variant={
-                  telemetry.congestion_state === "CONGESTED"
+                  !isLive
+                    ? "neutral"
+                    : telemetry.congestion_state === "CONGESTED"
                     ? "danger"
-                    : telemetry.congestion_state === "NORMAL"
-                    ? "success"
-                    : "neutral"
+                    : "success"
                 }
               >
-                {telemetry.congestion_state}
+                {!isLive ? "STANDBY" : telemetry.congestion_state}
               </Badge>
             </CardHeader>
             <div className="space-y-2 text-xs">
@@ -388,10 +407,18 @@ export const NetworkMonitor: React.FC = () => {
                 <span className="text-slate-500">Adaptive Policy Active:</span>
                 <span
                   className={`font-bold ${
-                    telemetry.policy_active ? "text-rose-600" : "text-emerald-600"
+                    !isLive
+                      ? "text-slate-500"
+                      : telemetry.policy_active
+                      ? "text-rose-600"
+                      : "text-emerald-600"
                   }`}
                 >
-                  {telemetry.policy_active ? "YES — Queue 1 Enforced" : "NO — Best Effort"}
+                  {!isLive
+                    ? "STANDBY (Offline)"
+                    : telemetry.policy_active
+                    ? "YES — Queue 1 Enforced"
+                    : "NO — Best Effort"}
                 </span>
               </div>
             </div>
@@ -409,25 +436,27 @@ export const NetworkMonitor: React.FC = () => {
             <div className="space-y-2 text-xs">
               <div
                 className={`p-2 rounded-lg border flex items-center justify-between ${
-                  telemetry.queue_assignment === 0 || !telemetry.policy_active
+                  !isLive || telemetry.queue_assignment === 0 || !telemetry.policy_active
                     ? "bg-slate-100 border-slate-300 font-bold"
                     : "bg-slate-50/60 border-slate-200 text-slate-500"
                 }`}
               >
                 <span>Queue 0: Best Effort (1–5 Mbps)</span>
-                {(!telemetry.policy_active || telemetry.queue_assignment === 0) && (
-                  <span className="text-[10px] bg-slate-800 text-white px-1.5 py-0.5 rounded">Active</span>
+                {(!isLive || !telemetry.policy_active || telemetry.queue_assignment === 0) && (
+                  <span className="text-[10px] bg-slate-800 text-white px-1.5 py-0.5 rounded">
+                    {isLive ? "Active" : "Default"}
+                  </span>
                 )}
               </div>
               <div
                 className={`p-2 rounded-lg border flex items-center justify-between ${
-                  telemetry.policy_active
+                  isLive && telemetry.policy_active
                     ? "bg-rose-50 border-rose-300 font-bold text-rose-900"
                     : "bg-slate-50/60 border-slate-200 text-slate-500"
                 }`}
               >
                 <span>Queue 1: Exam Priority (7–10 Mbps)</span>
-                {telemetry.policy_active && (
+                {isLive && telemetry.policy_active && (
                   <span className="text-[10px] bg-rose-600 text-white px-1.5 py-0.5 rounded animate-pulse">
                     High Priority
                   </span>
@@ -438,15 +467,15 @@ export const NetworkMonitor: React.FC = () => {
         </div>
 
         {/* Policy Event Timeline */}
-        {telemetry.policy_events && telemetry.policy_events.length > 0 && (
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-indigo-600" />
-                <CardTitle className="text-sm font-bold">SDN Dynamic Policy Decision History</CardTitle>
-              </div>
-              <span className="text-xs text-slate-500">{telemetry.policy_events.length} Events Logged</span>
-            </CardHeader>
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-indigo-600" />
+              <CardTitle className="text-sm font-bold">SDN Dynamic Policy Decision History</CardTitle>
+            </div>
+            <span className="text-xs text-slate-500">{telemetry.policy_events?.length ?? 0} Events Logged</span>
+          </CardHeader>
+          {telemetry.policy_events && telemetry.policy_events.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
@@ -475,8 +504,14 @@ export const NetworkMonitor: React.FC = () => {
                 </tbody>
               </table>
             </div>
-          </Card>
-        )}
+          ) : (
+            <div className="py-6 text-center text-xs text-slate-500">
+              {isLive
+                ? "Network traffic is currently normal (<70% link utilization). No QoS threshold events recorded."
+                : "Standby — Policy transition history will record when OpenFlow 1.3 congestion threshold events occur."}
+            </div>
+          )}
+        </Card>
       </div>
 
       {/* ========================================================================= */}

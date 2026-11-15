@@ -76,17 +76,45 @@ export async function pingExam(sessionId: string): Promise<{ remaining_seconds: 
   })
 }
 
-// Admin API
-export async function getAdminStats(): Promise<AdminStats> {
-  return request<AdminStats>("/api/admin/stats")
+// Admin Key Access Management
+const DEFAULT_ADMIN_KEY = "sdn-admin-key-2026"
+
+export function getAdminKey(): string {
+  try {
+    return localStorage.getItem("sdn_admin_key") || import.meta.env.VITE_ADMIN_API_KEY || DEFAULT_ADMIN_KEY
+  } catch {
+    return DEFAULT_ADMIN_KEY
+  }
 }
 
-export async function getAdminResults(): Promise<StudentResultRecord[]> {
-  return request<StudentResultRecord[]>("/api/admin/results")
+export function setAdminKey(key: string): void {
+  try {
+    localStorage.setItem("sdn_admin_key", key)
+  } catch {
+    // ignore local storage error
+  }
 }
 
-export async function getAdminSessions(): Promise<ActiveSession[]> {
-  return request<ActiveSession[]>("/api/admin/sessions")
+// Admin API (protected with X-Admin-Key)
+export async function getAdminStats(adminKey?: string): Promise<AdminStats> {
+  const key = adminKey || getAdminKey()
+  return request<AdminStats>("/api/admin/stats", {
+    headers: { "X-Admin-Key": key },
+  })
+}
+
+export async function getAdminResults(adminKey?: string): Promise<StudentResultRecord[]> {
+  const key = adminKey || getAdminKey()
+  return request<StudentResultRecord[]>("/api/admin/results", {
+    headers: { "X-Admin-Key": key },
+  })
+}
+
+export async function getAdminSessions(adminKey?: string): Promise<ActiveSession[]> {
+  const key = adminKey || getAdminKey()
+  return request<ActiveSession[]>("/api/admin/sessions", {
+    headers: { "X-Admin-Key": key },
+  })
 }
 
 // SDN API

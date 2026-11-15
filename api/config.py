@@ -41,6 +41,12 @@ DB_PATH: str = os.environ.get("DB_PATH", "exam_records.db")
 SDN_ENABLED: bool = _bool(os.environ.get("SDN_ENABLED", ""), default=False)
 
 # ---------------------------------------------------------------------------
+# Admin API Access Control
+# ---------------------------------------------------------------------------
+ADMIN_API_KEY: str = os.environ.get("ADMIN_API_KEY", "sdn-admin-key-2026")
+REQUIRE_ADMIN_AUTH: bool = _bool(os.environ.get("REQUIRE_ADMIN_AUTH", "true"), default=True)
+
+# ---------------------------------------------------------------------------
 # Optionally boot the exam TCP server inside this process
 # ---------------------------------------------------------------------------
 START_EXAM_SERVER: bool = _bool(os.environ.get("START_EXAM_SERVER", ""), default=False)

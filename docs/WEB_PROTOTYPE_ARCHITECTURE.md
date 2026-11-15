@@ -178,8 +178,19 @@ Exam Server (:5000)            (Linux HTB Queues)             FastAPI Gateway (:
 | `GATEWAY_HOST` | `0.0.0.0` | Listen host for FastAPI gateway |
 | `GATEWAY_PORT` | `8000` | Listen port for FastAPI gateway |
 | `DB_PATH` | `exam_records.db` | SQLite database file path |
+| `ADMIN_API_KEY` | `sdn-admin-key-2026` | Secret key for administrative API endpoints |
+| `REQUIRE_ADMIN_AUTH` | `true` | Enforces `X-Admin-Key` header on `/api/admin/*` |
 | `SDN_ENABLED` | `false` | Enables live SDN controller integration |
 | `START_EXAM_SERVER` | `false` | Automatically starts in-process TCP server |
 | `CORS_ORIGINS` | `http://localhost:5173,...` | Allowed CORS origins for web requests |
 | `VITE_API_URL` | `http://localhost:8000` | Frontend backend API URL |
 | `VITE_WS_URL` | `ws://localhost:8000` | Frontend WebSocket endpoint |
+| `VITE_ADMIN_API_KEY` | `sdn-admin-key-2026` | Frontend admin key for administrative dashboard |
+
+---
+
+## 9. Related Documentation
+
+- **[docs/FINAL_DEMO_GUIDE.md](FINAL_DEMO_GUIDE.md)**: 11-step viva and evaluation presentation guide.
+- **[docs/MININET_DEPLOYMENT.md](MININET_DEPLOYMENT.md)**: Comprehensive Ubuntu Linux & Mininet setup instructions.
+- **[README.md](../README.md)**: Master project documentation and quantitative performance benchmark analysis.

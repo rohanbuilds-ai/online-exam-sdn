@@ -111,7 +111,18 @@ class TestApiLayer(unittest.TestCase):
         self.assertTrue(snap_old["stale"])
 
     def test_admin_sessions_endpoint(self):
-        response = self.client.get("/api/admin/sessions")
+        # Without key or with invalid key should return 403 Forbidden
+        unauth_resp = self.client.get("/api/admin/sessions")
+        self.assertEqual(unauth_resp.status_code, 403)
+
+        wrong_key_resp = self.client.get("/api/admin/sessions", headers={"X-Admin-Key": "wrong-key"})
+        self.assertEqual(wrong_key_resp.status_code, 403)
+
+        # With valid key should succeed with 200 OK
+        response = self.client.get(
+            "/api/admin/sessions",
+            headers={"X-Admin-Key": "sdn-admin-key-2026"}
+        )
         self.assertEqual(response.status_code, 200)
         self.assertIsInstance(response.json(), list)
 

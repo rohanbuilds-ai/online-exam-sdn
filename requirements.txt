@@ -1,0 +1,6 @@
+# SDN-Based Online Examination Network Dependencies
+# Core application and SDN controller use Python 3 standard library exclusively
+# to ensure zero-dependency deployment in Ubuntu and virtualized environments.
+
+# Optional dependencies for analytics, graphing, and test execution
+matplotlib>=3.5.0

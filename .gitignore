@@ -5,3 +5,6 @@ sdn-env/
 *.log
 .DS_Store
 controller.py
+*.db
+*.db-shm
+*.db-wal

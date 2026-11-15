@@ -8,3 +8,7 @@ sdn-env/
 *.db
 *.db-shm
 *.db-wal
+node_modules/
+dist/
+results/sdn_telemetry_snapshot.json*
+

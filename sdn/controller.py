@@ -10,7 +10,9 @@ Integrates:
 """
 
 import argparse
+import json
 import logging
+import os
 import socket
 import struct
 import sys
@@ -339,6 +341,48 @@ class SDNController:
                     match_conn.mac_to_port = self.mac_tables[address]
             self._handle_packet_in(match_conn, body)
 
+    def _export_telemetry_snapshot(self) -> None:
+        """Export telemetry snapshot to results/sdn_telemetry_snapshot.json for web gateway."""
+        try:
+            results_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "results"
+            )
+            os.makedirs(results_dir, exist_ok=True)
+            snapshot_path = os.path.join(results_dir, "sdn_telemetry_snapshot.json")
+            with self._lock:
+                switches_data = [
+                    {
+                        "dpid": getattr(c, "dpid", None),
+                        "address": list(getattr(c, "address", ())),
+                        "ready": getattr(c, "ready", False),
+                    }
+                    for c in self.connections
+                ]
+
+            port_metrics = []
+            if hasattr(self.traffic_monitor, "port_metrics"):
+                port_metrics = list(self.traffic_monitor.port_metrics.values())
+
+            data = {
+                "controller_connected": True,
+                "switch_count": len(self.connections),
+                "switches": switches_data,
+                "port_stats": port_metrics,
+                "congestion_state": self.congestion_manager.current_state,
+                "policy_active": self.congestion_manager.current_state == STATE_CONGESTED,
+                "queue_assignment": (
+                    1 if self.congestion_manager.current_state == STATE_CONGESTED else 0
+                ),
+                "policy_events": self.congestion_manager.get_decision_history(),
+                "timestamp": time.time(),
+            }
+            tmp_path = snapshot_path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            os.replace(tmp_path, snapshot_path)
+        except Exception:
+            pass
+
     def _periodic_monitor_loop(self) -> None:
         """Poll switches for port statistics on every monitor interval."""
         while self.is_running:
@@ -352,6 +396,7 @@ class SDNController:
                     conn.send(req)
                 except Exception:
                     pass
+            self._export_telemetry_snapshot()
 
     def _on_policy_change(self, new_state: str, bottleneck_port: int) -> None:
         """Invoked when CongestionManager changes state."""
@@ -395,6 +440,8 @@ class SDNController:
                     logger.info("Reverted Examination TCP Traffic to standard Best-Effort Queue 0.")
                 except Exception:
                     pass
+
+        self._export_telemetry_snapshot()
 
     _apply_sdn_policy = _on_policy_change
 

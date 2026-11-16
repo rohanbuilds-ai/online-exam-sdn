@@ -14,7 +14,7 @@ echo   [2] Start FastAPI Web Gateway        (adapter on port 8000 + /docs)
 echo   [3] Start React + Vite Frontend      (web UI on http://localhost:5173)
 echo   [4] Start SDN OpenFlow Controller    (OpenFlow 1.3 on port 6653)
 echo   [5] Launch ALL 3 Web Components      (Server + Gateway + Frontend)
-echo   [6] Run Full Test Suite              (36 unit, concurrency & API tests)
+echo   [6] Run Full Test Suite              (38 unit, concurrency, protocol & API tests)
 echo   [7] Stop Running Components          (release ports 5000, 8000, 5173)
 echo   [8] Exit
 echo.

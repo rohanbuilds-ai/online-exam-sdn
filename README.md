@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![OpenFlow 1.3](https://img.shields.io/badge/OpenFlow-1.3-orange.svg)](https://www.opennetworking.org/)
 [![Mininet](https://img.shields.io/badge/Mininet-2.3%2B-green.svg)](http://mininet.org/)
-[![Tests](https://img.shields.io/badge/Tests-36%2F36%20Passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-38%2F38%20Passing-brightgreen.svg)](tests/)
 [![Rubric Score](https://img.shields.io/badge/Rubric%20Score-40%2F40%20(100%25)-success.svg)](docs/rubric_traceability.md)
 
 An end-to-end, multi-tier Software-Defined Networking (SDN) system that manages and prioritizes online examination traffic under severe network congestion. Features concurrent multithreaded TCP socket clients, a server-authoritative countdown timer, persistent SQLite result evaluation, an OpenFlow 1.3 SDN controller with real-time port telemetry, and dynamic QoS traffic prioritization.
@@ -278,27 +278,36 @@ To observe real-time adaptive traffic management:
 
 ## 9. Performance Evaluation & Empirical Results
 
-We conducted repeatable controlled experiments comparing the **Baseline (Static SDN)** against the **Dynamic SDN (Adaptive QoS)** across 5, 10, and 20 simultaneous student clients under identical 8.5 Mbps background congestion on a 10 Mbps bottleneck link.
+The empirical measurements compare the **Baseline (Static SDN)** against **Dynamic SDN (Adaptive QoS)** across 5, 10, and 20 simultaneous student clients under identical 8.5 Mbps UDP background congestion on a 10 Mbps bottleneck link.
 
-### Quantitative Comparison Table
+All figures below are drawn directly from the authoritative experiment records (`results/baseline_results.json` and `results/dynamic_sdn_results.json`).
 
-| Concurrent Clients | Metric | Baseline (Static SDN) | Dynamic SDN (Adaptive QoS) | Empirical Improvement |
+### Quantitative Comparison Table (Congested Scenarios)
+
+| Concurrent Clients | Metric | Baseline (Static SDN) | Dynamic SDN (Adaptive QoS) | Empirical Delta |
 |:---:|---|:---:|:---:|:---:|
-| **5 Clients** | **Average Response Latency** | 225.50 ms | **26.73 ms** | **-88.1% Latency Reduction** |
-| | **P95 Worst-Case Latency** | 296.42 ms | **31.70 ms** | **-89.3% P95 Reduction** |
-| | **Application Throughput** | 5.50 req/s | **13.75 req/s** | **+150.0% Throughput Gain** |
-| | **Packet Loss** | 7.8% | **0.0%** | **100% Loss Eliminated** |
-| | **Jain's Fairness Index** | 0.9462 | **0.9899** | **+0.0437 (Higher Fairness)** |
-| **10 Clients** | **Average Response Latency** | 289.54 ms | **30.15 ms** | **-89.6% Latency Reduction** |
-| | **P95 Worst-Case Latency** | 391.09 ms | **35.93 ms** | **-90.8% P95 Reduction** |
-| | **Application Throughput** | 11.00 req/s | **27.50 req/s** | **+150.0% Throughput Gain** |
-| | **Packet Loss** | 11.0% | **0.0%** | **100% Loss Eliminated** |
-| | **Jain's Fairness Index** | 0.9449 | **0.9834** | **+0.0385 (Higher Fairness)** |
-| **20 Clients** | **Average Response Latency** | 445.97 ms | **36.64 ms** | **-91.8% Latency Reduction** |
-| | **P95 Worst-Case Latency** | 586.81 ms | **43.67 ms** | **-92.6% P95 Reduction** |
-| | **Application Throughput** | 22.00 req/s | **55.00 req/s** | **+150.0% Throughput Gain** |
-| | **Packet Loss** | 17.5% | **0.0%** | **100% Loss Eliminated** |
-| | **Jain's Fairness Index** | 0.9457 | **0.9917** | **+0.0460 (Higher Fairness)** |
+| **5 Clients** | **Average Response Latency** | 6.81 ms | **4.47 ms** | **-34.4% Latency Reduction** |
+| | **P95 Worst-Case Latency** | 23.27 ms | **12.12 ms** | **-47.9% P95 Reduction** |
+| | **Application Throughput** | 93.49 req/s | **256.48 req/s** | **+174.3% Throughput Gain** |
+| | **Packet Loss** | 0.0% | **0.0%** | **0.0% in both (No Loss)** |
+| | **Jain's Fairness Index** | 0.9243 | **0.9938** | **+0.0695 (Higher Fairness)** |
+| **10 Clients** | **Average Response Latency** | 23.75 ms | **10.30 ms** | **-56.6% Latency Reduction** |
+| | **P95 Worst-Case Latency** | 66.79 ms | **38.84 ms** | **-41.8% P95 Reduction** |
+| | **Application Throughput** | 205.45 req/s | **313.52 req/s** | **+52.6% Throughput Gain** |
+| | **Packet Loss** | 0.0% | **0.0%** | **0.0% in both (No Loss)** |
+| | **Jain's Fairness Index** | 0.9925 | **0.9909** | **-0.0016 (Comparable)** |
+| **20 Clients** | **Average Response Latency** | 53.81 ms | **19.00 ms** | **-64.7% Latency Reduction** |
+| | **P95 Worst-Case Latency** | 139.41 ms | **90.39 ms** | **-35.2% P95 Reduction** |
+| | **Application Throughput** | 194.74 req/s | **474.94 req/s** | **+143.9% Throughput Gain** |
+| | **Packet Loss** | 0.0% | **0.0%** | **0.0% in both (No Loss)** |
+| | **Jain's Fairness Index** | 0.9953 | **0.9860** | **-0.0093 (Comparable)** |
+
+> [!NOTE]
+> **Data Integrity & Evaluation Observations:**
+> 1. **Latency & Throughput**: Dynamic QoS delivers a **34.4%–64.7%** reduction in mean latency and a **52.6%–174.3%** increase in throughput under severe link congestion by steering examination traffic into Queue 1 (7–10 Mbps).
+> 2. **Packet Loss**: Packet loss is **0.0%** across both architectures in all recorded scenarios because reliable TCP stream sockets handle retransmissions.
+> 3. **Fairness**: Jain's fairness index is consistently high (0.92–0.99) across all runs. It improves markedly under 5 clients (+0.0695), but remains closely matched at 10 and 20 clients.
+> 4. **Normal Traffic Control**: Under uncontested normal conditions (0 Mbps background traffic), Dynamic SDN and Static SDN perform identically (both use best-effort Queue 0 since link utilization is <30%).
 
 ### Visual Benchmark Plots
 
@@ -310,7 +319,7 @@ We conducted repeatable controlled experiments comparing the **Baseline (Static 
 
 ## 10. Automated Testing Strategy
 
-The project includes 36 unit, concurrency, protocol, controller, and web gateway test cases across 9 test modules:
+The project includes 38 unit, concurrency, protocol, controller, and web gateway test cases across 9 test modules:
 
 ```bash
 python -m unittest discover -s tests -v
@@ -328,8 +337,8 @@ python -m unittest discover -s tests -v
 | `tests/test_congestion.py` | Telemetry rate calculation, threshold state transitions | **PASS (2/2)** |
 | `tests/test_server.py` | 5 simultaneous TCP clients concurrent execution | **PASS (2/2)** |
 | `tests/test_controller.py` | SwitchConnection lifecycle, packet-in, flow installation | **PASS (5/5)** |
-| `tests/test_api.py` | FastAPI gateway, session store, admin key auth, E2E exam | **PASS (8/8)** |
-| **TOTAL** | **Comprehensive Codebase & Gateway Verification** | **36/36 PASSED** |
+| `tests/test_api.py` | FastAPI gateway, session store, signed cookie auth, E2E exam | **PASS (10/10)** |
+| **TOTAL** | **Comprehensive Codebase & Gateway Verification** | **38/38 PASSED** |
 
 ---
 

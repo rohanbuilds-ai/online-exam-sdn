@@ -12,15 +12,19 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 import socket
 import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
 from fastapi import (
+    Cookie,
     FastAPI,
     Header,
     HTTPException,
+    Request,
+    Response,
     WebSocket,
     WebSocketDisconnect,
     status,
@@ -29,6 +33,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import api.config as config
+from api.auth import COOKIE_NAME, create_session_token, verify_session_token
 from api.config import (
     CORS_ORIGINS,
     DB_PATH,
@@ -128,6 +133,10 @@ class AuthRequest(BaseModel):
 class AnswerRequest(BaseModel):
     question_id: int
     selected_option: int
+
+
+class AdminLoginRequest(BaseModel):
+    password: str
 
 
 # ---------------------------------------------------------------------------
@@ -300,56 +309,143 @@ def exam_ping(
 
 
 # ===========================================================================
-# Admin endpoints (protected by X-Admin-Key)
+# Admin authentication & protected endpoints
 # ===========================================================================
 
-def _require_admin(x_admin_key: Optional[str] = Header(default=None, alias="X-Admin-Key")) -> None:
-    """Validate administrative authorization header if REQUIRE_ADMIN_AUTH is enabled."""
-    if not config.REQUIRE_ADMIN_AUTH:
-        return
-    if not x_admin_key or x_admin_key != config.ADMIN_API_KEY:
+def _require_admin(request: Request) -> Dict[str, Any]:
+    """
+    Validate that the request carries a valid signed HTTP-only admin session cookie,
+    or a valid Authorization: Bearer <token> header.
+    """
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:].strip()
+
+    if not token:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error": "Administrative access forbidden: invalid or missing X-Admin-Key header."},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "Administrator authentication required. Please log in."},
         )
+
+    payload = verify_session_token(token)
+    if not payload or payload.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "Invalid or expired administrator session. Please log in again."},
+        )
+    return payload
+
+
+@app.post("/api/admin/login", status_code=status.HTTP_200_OK)
+def admin_login(body: AdminLoginRequest, response: Response) -> Dict[str, Any]:
+    """
+    Authenticate administrator using server-side ADMIN_PASSWORD.
+    Sets a signed HTTP-only session cookie.
+    """
+    if not config.ADMIN_PASSWORD:
+        logger.error("Admin login attempted, but ADMIN_PASSWORD is not configured on the server.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": "Admin authentication is not configured on the server. Set ADMIN_PASSWORD environment variable."},
+        )
+
+    if not secrets.compare_digest(body.password, config.ADMIN_PASSWORD):
+        logger.warning("Failed admin login attempt.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "Invalid administrator password."},
+        )
+
+    token = create_session_token(role="admin")
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=config.SESSION_COOKIE_SECURE,
+        max_age=config.SESSION_MAX_AGE_SEC,
+        path="/",
+    )
+    logger.info("Administrator authenticated successfully via session cookie.")
+    return {
+        "status": "authenticated",
+        "role": "admin",
+        "expires_in": config.SESSION_MAX_AGE_SEC,
+        "token": token,
+    }
+
+
+@app.post("/api/admin/logout", status_code=status.HTTP_200_OK)
+def admin_logout(response: Response) -> Dict[str, Any]:
+    """Log out administrator and clear the session cookie."""
+    response.delete_cookie(
+        key=COOKIE_NAME,
+        path="/",
+        httponly=True,
+        samesite="lax",
+    )
+    return {"status": "logged_out"}
+
+
+@app.get("/api/admin/session", status_code=status.HTTP_200_OK)
+def admin_check_session(request: Request) -> Dict[str, Any]:
+    """Check whether the client holds an active, valid administrator session."""
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:].strip()
+
+    if not token:
+        return {"authenticated": False}
+
+    payload = verify_session_token(token)
+    if not payload or payload.get("role") != "admin":
+        return {"authenticated": False}
+
+    return {"authenticated": True, "role": "admin", "expires_at": payload.get("exp")}
 
 
 @app.get("/api/admin/results", status_code=status.HTTP_200_OK)
-def admin_results(
-    x_admin_key: Optional[str] = Header(default=None, alias="X-Admin-Key"),
-) -> Any:
+def admin_results(request: Request) -> Any:
     """Return all completed exam results from the persistent SQLite store."""
-    _require_admin(x_admin_key)
-    if _exam_storage is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"error": "Storage not available."},
-        )
-    return _exam_storage.get_all_results()
+    _require_admin(request)
+    storage = _exam_storage
+    if storage is None:
+        try:
+            storage = ExamStorage(db_path=config.DB_PATH)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"error": "Storage not available."},
+            )
+    return storage.get_all_results()
 
 
 @app.get("/api/admin/stats", status_code=status.HTTP_200_OK)
-def admin_stats(
-    x_admin_key: Optional[str] = Header(default=None, alias="X-Admin-Key"),
-) -> Dict[str, Any]:
+def admin_stats(request: Request) -> Dict[str, Any]:
     """Return summary statistics plus the current active session count."""
-    _require_admin(x_admin_key)
-    if _exam_storage is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"error": "Storage not available."},
-        )
-    stats = _exam_storage.get_summary_statistics()
+    _require_admin(request)
+    storage = _exam_storage
+    if storage is None:
+        try:
+            storage = ExamStorage(db_path=config.DB_PATH)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"error": "Storage not available."},
+            )
+    stats = storage.get_summary_statistics()
     stats["active_sessions"] = session_store.count()
     return stats
 
 
 @app.get("/api/admin/sessions", status_code=status.HTTP_200_OK)
-def admin_sessions(
-    x_admin_key: Optional[str] = Header(default=None, alias="X-Admin-Key"),
-) -> Any:
+def admin_sessions(request: Request) -> Any:
     """Return metadata for all currently active gateway sessions."""
-    _require_admin(x_admin_key)
+    _require_admin(request)
     return session_store.list_active()
 
 

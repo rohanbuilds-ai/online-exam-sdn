@@ -4,6 +4,7 @@ All values can be overridden via environment variables or a .env file.
 """
 
 import os
+from typing import Optional
 
 
 def _bool(val: str, default: bool = False) -> bool:
@@ -41,10 +42,22 @@ DB_PATH: str = os.environ.get("DB_PATH", "exam_records.db")
 SDN_ENABLED: bool = _bool(os.environ.get("SDN_ENABLED", ""), default=False)
 
 # ---------------------------------------------------------------------------
-# Admin API Access Control
+# Admin Authentication & Session Security
 # ---------------------------------------------------------------------------
-ADMIN_API_KEY: str = os.environ.get("ADMIN_API_KEY", "sdn-admin-key-2026")
-REQUIRE_ADMIN_AUTH: bool = _bool(os.environ.get("REQUIRE_ADMIN_AUTH", "true"), default=True)
+import secrets
+
+# Server-side administrative password. Configured via environment variable.
+ADMIN_PASSWORD: Optional[str] = os.environ.get("ADMIN_PASSWORD")
+
+# Secret key for HMAC-SHA256 session cookie signing.
+# If unset, generates a secure random 256-bit key at process startup.
+SESSION_SECRET: str = os.environ.get("SESSION_SECRET") or secrets.token_hex(32)
+
+# Session cookie lifetime in seconds (default: 8 hours)
+SESSION_MAX_AGE_SEC: int = int(os.environ.get("SESSION_MAX_AGE_SEC", "28800"))
+
+# Whether session cookies require HTTPS (default: False for local dev / Mininet VM)
+SESSION_COOKIE_SECURE: bool = _bool(os.environ.get("SESSION_COOKIE_SECURE", "false"), default=False)
 
 # ---------------------------------------------------------------------------
 # Optionally boot the exam TCP server inside this process

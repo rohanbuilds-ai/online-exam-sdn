@@ -29,6 +29,10 @@ class DummySocket:
 
 class TestApiLayer(unittest.TestCase):
     def setUp(self):
+        import api.main as main_mod
+        if main_mod._exam_storage is None:
+            from app.storage import ExamStorage
+            main_mod._exam_storage = ExamStorage(db_path=":memory:")
         self.client = TestClient(app)
 
     def test_health_endpoint(self):
@@ -110,21 +114,76 @@ class TestApiLayer(unittest.TestCase):
         self.assertTrue(snap_old["available"])
         self.assertTrue(snap_old["stale"])
 
-    def test_admin_sessions_endpoint(self):
-        # Without key or with invalid key should return 403 Forbidden
+    def test_admin_sessions_endpoint_requires_auth(self):
+        """Accessing admin endpoints without an active session returns 401 Unauthorized."""
         unauth_resp = self.client.get("/api/admin/sessions")
-        self.assertEqual(unauth_resp.status_code, 403)
+        self.assertEqual(unauth_resp.status_code, 401)
+        self.assertIn("error", unauth_resp.json().get("detail", {}))
 
-        wrong_key_resp = self.client.get("/api/admin/sessions", headers={"X-Admin-Key": "wrong-key"})
-        self.assertEqual(wrong_key_resp.status_code, 403)
+    def test_admin_auth_flow(self):
+        """Test complete admin lifecycle: login failure, success, cookie session, protected access, and logout."""
+        import api.config as cfg
+        orig_pw = cfg.ADMIN_PASSWORD
+        cfg.ADMIN_PASSWORD = "test-strong-admin-pass-xyz"
 
-        # With valid key should succeed with 200 OK
-        response = self.client.get(
-            "/api/admin/sessions",
-            headers={"X-Admin-Key": "sdn-admin-key-2026"}
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertIsInstance(response.json(), list)
+        try:
+            # 1. Unauthenticated request to /api/admin/stats returns 401
+            unauth = self.client.get("/api/admin/stats")
+            self.assertEqual(unauth.status_code, 401)
+
+            # 2. Check session endpoint initially reports authenticated=False
+            sess_check = self.client.get("/api/admin/session")
+            self.assertEqual(sess_check.status_code, 200)
+            self.assertFalse(sess_check.json().get("authenticated"))
+
+            # 3. Login with wrong password returns 401
+            bad_login = self.client.post("/api/admin/login", json={"password": "wrong-password"})
+            self.assertEqual(bad_login.status_code, 401)
+
+            # 4. Login with correct password returns 200 and issues cookie
+            good_login = self.client.post("/api/admin/login", json={"password": "test-strong-admin-pass-xyz"})
+            self.assertEqual(good_login.status_code, 200)
+            self.assertEqual(good_login.json().get("status"), "authenticated")
+            self.assertIn("admin_session", good_login.cookies)
+
+            # 5. Access protected endpoint with cookie returns 200 OK
+            stats_resp = self.client.get("/api/admin/stats")
+            self.assertEqual(stats_resp.status_code, 200)
+            self.assertIn("active_sessions", stats_resp.json())
+
+            sessions_resp = self.client.get("/api/admin/sessions")
+            self.assertEqual(sessions_resp.status_code, 200)
+            self.assertIsInstance(sessions_resp.json(), list)
+
+            # 6. Check session endpoint reports authenticated=True
+            sess_check = self.client.get("/api/admin/session")
+            self.assertEqual(sess_check.status_code, 200)
+            self.assertTrue(sess_check.json().get("authenticated"))
+
+            # 7. Logout clears session
+            logout_resp = self.client.post("/api/admin/logout")
+            self.assertEqual(logout_resp.status_code, 200)
+            self.assertEqual(logout_resp.json().get("status"), "logged_out")
+
+            # 8. Subsequent access returns 401 Unauthorized
+            subsequent = self.client.get("/api/admin/sessions")
+            self.assertEqual(subsequent.status_code, 401)
+
+        finally:
+            cfg.ADMIN_PASSWORD = orig_pw
+
+    def test_admin_login_unconfigured_fails_safely(self):
+        """When ADMIN_PASSWORD is unset, login fails safely with 503 Service Unavailable."""
+        import api.config as cfg
+        orig_pw = cfg.ADMIN_PASSWORD
+        cfg.ADMIN_PASSWORD = None
+
+        try:
+            resp = self.client.post("/api/admin/login", json={"password": "any-password"})
+            self.assertEqual(resp.status_code, 503)
+            self.assertIn("not configured", resp.json().get("detail", {}).get("error", ""))
+        finally:
+            cfg.ADMIN_PASSWORD = orig_pw
 
     def test_missing_session_id_header(self):
         # Accessing /api/exam/question without X-Session-ID should return 400

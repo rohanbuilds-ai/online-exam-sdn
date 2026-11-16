@@ -20,7 +20,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     ...options.headers,
   }
 
-  const res = await fetch(url, { ...options, headers })
+  const res = await fetch(url, {
+    credentials: "include", // send and receive HTTP-only session cookies
+    ...options,
+    headers,
+  })
   if (!res.ok) {
     let errMessage = `HTTP error ${res.status}`
     try {
@@ -76,45 +80,34 @@ export async function pingExam(sessionId: string): Promise<{ remaining_seconds: 
   })
 }
 
-// Admin Key Access Management
-const DEFAULT_ADMIN_KEY = "sdn-admin-key-2026"
-
-export function getAdminKey(): string {
-  try {
-    return localStorage.getItem("sdn_admin_key") || import.meta.env.VITE_ADMIN_API_KEY || DEFAULT_ADMIN_KEY
-  } catch {
-    return DEFAULT_ADMIN_KEY
-  }
-}
-
-export function setAdminKey(key: string): void {
-  try {
-    localStorage.setItem("sdn_admin_key", key)
-  } catch {
-    // ignore local storage error
-  }
-}
-
-// Admin API (protected with X-Admin-Key)
-export async function getAdminStats(adminKey?: string): Promise<AdminStats> {
-  const key = adminKey || getAdminKey()
-  return request<AdminStats>("/api/admin/stats", {
-    headers: { "X-Admin-Key": key },
+// Admin Session & Authentication API (HTTP-only session cookie)
+export async function adminLogin(password: string): Promise<{ status: string; role?: string; expires_in?: number }> {
+  return request<{ status: string; role?: string; expires_in?: number }>("/api/admin/login", {
+    method: "POST",
+    body: JSON.stringify({ password }),
   })
 }
 
-export async function getAdminResults(adminKey?: string): Promise<StudentResultRecord[]> {
-  const key = adminKey || getAdminKey()
-  return request<StudentResultRecord[]>("/api/admin/results", {
-    headers: { "X-Admin-Key": key },
+export async function adminLogout(): Promise<{ status: string }> {
+  return request<{ status: string }>("/api/admin/logout", {
+    method: "POST",
   })
 }
 
-export async function getAdminSessions(adminKey?: string): Promise<ActiveSession[]> {
-  const key = adminKey || getAdminKey()
-  return request<ActiveSession[]>("/api/admin/sessions", {
-    headers: { "X-Admin-Key": key },
-  })
+export async function checkAdminSession(): Promise<{ authenticated: boolean; role?: string; expires_at?: number }> {
+  return request<{ authenticated: boolean; role?: string; expires_at?: number }>("/api/admin/session")
+}
+
+export async function getAdminStats(): Promise<AdminStats> {
+  return request<AdminStats>("/api/admin/stats")
+}
+
+export async function getAdminResults(): Promise<StudentResultRecord[]> {
+  return request<StudentResultRecord[]>("/api/admin/results")
+}
+
+export async function getAdminSessions(): Promise<ActiveSession[]> {
+  return request<ActiveSession[]>("/api/admin/sessions")
 }
 
 // SDN API

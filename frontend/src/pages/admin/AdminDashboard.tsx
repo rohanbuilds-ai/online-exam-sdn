@@ -7,43 +7,70 @@ import {
   Search,
   Activity,
   Award,
-  Key,
   Filter,
-  Lock
+  Lock,
+  LogOut,
+  ShieldCheck
 } from "lucide-react"
 import { Card, CardHeader, CardTitle } from "../../components/ui/Card"
 import { Button } from "../../components/ui/Button"
 import { Badge } from "../../components/ui/Badge"
 import { Spinner } from "../../components/ui/Spinner"
 import { Alert } from "../../components/ui/Alert"
-import { getAdminStats, getAdminResults, getAdminSessions, getAdminKey, setAdminKey } from "../../lib/api"
+import {
+  getAdminStats,
+  getAdminResults,
+  getAdminSessions,
+  adminLogin,
+  adminLogout,
+  checkAdminSession
+} from "../../lib/api"
 import { AdminStats, StudentResultRecord, ActiveSession } from "../../types/exam"
 import { formatDateTime, formatPercent } from "../../lib/utils"
 
 export const AdminDashboard: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
+  const [passwordInput, setPasswordInput] = useState("")
+  const [loginLoading, setLoginLoading] = useState(false)
+  const [loginError, setLoginError] = useState<string | null>(null)
+
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [results, setResults] = useState<StudentResultRecord[]>([])
   const [sessions, setSessions] = useState<ActiveSession[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [isAuthError, setIsAuthError] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [resultFilter, setResultFilter] = useState<string>("ALL")
-  
-  // Admin Key management
-  const [adminKey, setAdminKeyState] = useState<string>(getAdminKey())
-  const [showKeyInput, setShowKeyInput] = useState(false)
-  const [keyDraft, setKeyDraft] = useState(getAdminKey())
+
+  // Check existing session cookie on initial load
+  useEffect(() => {
+    const verifySession = async () => {
+      try {
+        const session = await checkAdminSession()
+        if (session.authenticated) {
+          setIsAuthenticated(true)
+          loadData()
+        } else {
+          setIsAuthenticated(false)
+          setLoading(false)
+        }
+      } catch {
+        setIsAuthenticated(false)
+        setLoading(false)
+      }
+    }
+    verifySession()
+  }, [])
 
   const loadData = async () => {
     setError(null)
-    setIsAuthError(false)
+    setLoading(true)
     try {
       const [statsData, resultsData, sessionsData] = await Promise.all([
-        getAdminStats(adminKey),
-        getAdminResults(adminKey),
-        getAdminSessions(adminKey),
+        getAdminStats(),
+        getAdminResults(),
+        getAdminSessions(),
       ])
       setStats(statsData)
       setResults(resultsData)
@@ -51,31 +78,129 @@ export const AdminDashboard: React.FC = () => {
     } catch (err: any) {
       const msg = err.message || "Failed to load admin examination records from SQLite database."
       setError(msg)
-      if (msg.includes("403") || msg.includes("forbidden") || msg.includes("Administrative access")) {
-        setIsAuthError(true)
+      if (msg.includes("401") || msg.includes("Unauthorized") || msg.includes("session")) {
+        setIsAuthenticated(false)
       }
     } finally {
       setLoading(false)
     }
   }
 
+  // Periodic polling when authenticated
   useEffect(() => {
-    loadData()
+    if (!isAuthenticated) return
     const interval = setInterval(loadData, 10000) // auto-refresh every 10s
     return () => clearInterval(interval)
-  }, [adminKey])
+  }, [isAuthenticated])
 
-  const handleSaveKey = () => {
-    setAdminKey(keyDraft.trim())
-    setAdminKeyState(keyDraft.trim())
-    setShowKeyInput(false)
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!passwordInput.trim()) return
+
+    setLoginLoading(true)
+    setLoginError(null)
+
+    try {
+      const res = await adminLogin(passwordInput.trim())
+      if (res.status === "authenticated") {
+        setIsAuthenticated(true)
+        setPasswordInput("")
+        loadData()
+      }
+    } catch (err: any) {
+      setLoginError(err.message || "Authentication failed. Check your administrative credentials.")
+    } finally {
+      setLoginLoading(false)
+    }
   }
 
+  const handleLogout = async () => {
+    try {
+      await adminLogout()
+    } catch {
+      // ignore
+    } finally {
+      setIsAuthenticated(false)
+      setStats(null)
+      setResults([])
+      setSessions([])
+    }
+  }
+
+  // 1. Initial Session Checking State
+  if (isAuthenticated === null) {
+    return (
+      <div className="py-24 flex flex-col items-center justify-center text-slate-500">
+        <Spinner size="lg" className="mb-3" />
+        <span className="text-xs font-medium">Verifying administrator session...</span>
+      </div>
+    )
+  }
+
+  // 2. Unauthenticated Login Gate
+  if (!isAuthenticated) {
+    return (
+      <div className="max-w-md mx-auto py-12">
+        <Card className="shadow-lg border-slate-200 overflow-hidden">
+          <CardHeader className="bg-slate-50 border-b border-slate-200/80 pb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="h-9 w-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+                <Lock className="h-4 w-4" />
+              </div>
+              <div>
+                <CardTitle className="text-base text-slate-900">Administrator Access</CardTitle>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Server-side session authentication required
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+
+          <form onSubmit={handleLogin} className="p-6 space-y-4">
+            <div className="text-xs text-slate-600 leading-relaxed">
+              Examination records and active candidate streams are restricted. Enter the server-side administrator credential (<code>ADMIN_PASSWORD</code>) to issue a secure HTTP-only session.
+            </div>
+
+            {loginError && (
+              <Alert variant="danger" title="Authentication Failed">
+                {loginError}
+              </Alert>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-700">Administrator Password</label>
+              <input
+                type="password"
+                required
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="Enter admin password..."
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition font-mono"
+              />
+            </div>
+
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              loading={loginLoading}
+              disabled={loginLoading || !passwordInput.trim()}
+              className="w-full font-bold shadow-sm"
+            >
+              Sign In to Administration
+            </Button>
+          </form>
+        </Card>
+      </div>
+    )
+  }
+
+  // 3. Authenticated Dashboard View
   const filteredResults = results.filter((r) => {
     const matchesSearch =
       r.student_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (r.name && r.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    
+
     const matchesStatus =
       statusFilter === "ALL" || r.status === statusFilter
 
@@ -101,69 +226,27 @@ export const AdminDashboard: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Admin Key pill */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs font-mono">
-            <Lock className="h-3.5 w-3.5 text-slate-500" />
-            <span className="text-slate-600">Key:</span>
-            <span className="font-bold text-slate-800">
-              {adminKey.length > 8 ? `${adminKey.slice(0, 4)}...${adminKey.slice(-4)}` : "••••••••"}
-            </span>
-            <button
-              onClick={() => {
-                setKeyDraft(adminKey)
-                setShowKeyInput(!showKeyInput)
-              }}
-              className="ml-1 text-indigo-600 hover:text-indigo-800 text-[11px] underline font-sans"
-            >
-              {showKeyInput ? "Cancel" : "Change"}
-            </button>
+          {/* Admin Session Badge */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-medium text-emerald-800">
+            <ShieldCheck className="h-4 w-4 text-emerald-600" />
+            <span>Admin Session Active</span>
           </div>
 
           <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
             <RotateCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Refresh Records
+            Refresh
+          </Button>
+
+          <Button variant="outline" size="sm" onClick={handleLogout}>
+            <LogOut className="h-4 w-4 text-slate-600" />
+            Log Out
           </Button>
         </div>
       </div>
 
-      {/* Admin Key update inline panel */}
-      {showKeyInput && (
-        <Card className="bg-slate-50 border-indigo-200">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-            <div className="space-y-0.5">
-              <span className="font-bold text-slate-900">Configure Administrator API Key (X-Admin-Key)</span>
-              <p className="text-slate-500">
-                Matches the server's <code>ADMIN_API_KEY</code> environment variable (Default: <code>sdn-admin-key-2026</code>).
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={keyDraft}
-                onChange={(e) => setKeyDraft(e.target.value)}
-                placeholder="Enter admin API key..."
-                className="px-3 py-1.5 border border-slate-300 rounded-lg font-mono text-xs w-56 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-              <Button size="sm" variant="primary" onClick={handleSaveKey}>
-                Apply Key
-              </Button>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Error alert with recovery */}
       {error && (
-        <Alert variant="danger" title={isAuthError ? "Administrative Access Forbidden (403)" : "Administrative Notice"}>
-          <div className="space-y-2">
-            <p>{error}</p>
-            {isAuthError && (
-              <p className="text-xs">
-                To protect student privacy, administrative records require a valid <code>X-Admin-Key</code>.
-                Click <strong>Change</strong> above to provide the correct key.
-              </p>
-            )}
-          </div>
+        <Alert variant="danger" title="Administrative Notice">
+          <p>{error}</p>
         </Alert>
       )}
 
@@ -230,7 +313,7 @@ export const AdminDashboard: React.FC = () => {
         </Card>
       </div>
 
-      {/* Active Examination Sessions (Visual Accent: Amber Theme) */}
+      {/* Active Examination Sessions */}
       <Card className="border-amber-200/80 bg-amber-50/20">
         <CardHeader className="border-b border-amber-100">
           <div className="flex items-center gap-2">

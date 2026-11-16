@@ -159,7 +159,8 @@ Configure environment variables if needed:
 ```bash
 mininet> h2 export EXAM_SERVER_HOST=10.0.0.1
 mininet> h2 export EXAM_SERVER_PORT=5000
-mininet> h2 export ADMIN_API_KEY=sdn-admin-key-2026
+mininet> h2 export ADMIN_PASSWORD=your_secure_admin_password_here
+mininet> h2 export SESSION_COOKIE_SECURE=false
 ```
 
 ---

@@ -6,17 +6,20 @@ This guide provides an end-to-end, 11-step demonstration script designed for viv
 
 ## Demonstration Status Matrix
 
-| Component / Capability | Implementation Status | Verification Level | Demonstration Mode |
+| Component / Capability | Category | Verification Level | Demonstration Mode |
 |---|:---:|:---:|:---:|
-| **Framed TCP Protocol** (`app/protocol.py`) | Completed | 5/5 Unit Tests Passing | Live Socket Connection |
-| **Authoritative Exam Daemon** (`app/server.py`) | Completed | Concurrency & Timer Tests Passing | Active Process (Port 5000) |
-| **SQLite Persistence** (`app/storage.py`) | Completed | Database Unit Tests Passing | Real-time WAL Storage (`exam_records.db`) |
-| **FastAPI Web Adapter** (`api/main.py`) | Completed | 8/8 Gateway Tests Passing | REST & WebSocket Server (Port 8000) |
-| **React 18 + TS Frontend** (`frontend/`) | Completed | Production Build Passing (`dist/`) | Browser UI (Port 5173 / 8000) |
-| **Admin Access Control** (`X-Admin-Key`) | Completed | 403 Forbidden & 200 OK Tested | Dynamic Dashboard Key Management |
-| **Pure Python OF 1.3 Controller** (`sdn/controller.py`) | Completed | 5/5 Controller Tests Passing | Tested on Windows + Linux |
-| **Mininet Topology & Linux HTB Queuing** | Completed | Validated in Ubuntu VM | Pending Live VM Boot (See [MININET_DEPLOYMENT.md](MININET_DEPLOYMENT.md)) |
-| **Live Congestion QoS Prioritization** | Completed | Benchmark Datasets Recorded | Demonstrated via NOC Telemetry / Live Mininet |
+| **Framed TCP Protocol** (`app/protocol.py`) | Implemented & Unit-Tested | 5/5 Unit Tests Passing | Live TCP Socket Framing |
+| **Authoritative Exam Daemon** (`app/server.py`) | Implemented & Unit-Tested | Concurrency & Timer Tests Passing | Active TCP Process (Port 5000) |
+| **SQLite Persistence** (`app/storage.py`) | Implemented & Unit-Tested | Database Unit Tests Passing | Real-time WAL Storage (`exam_records.db`) |
+| **FastAPI Web Adapter** (`api/main.py`) | Implemented & Unit-Tested | 10/10 Gateway Tests Passing | REST & WebSocket Server (Port 8000) |
+| **React 18 + TS Frontend** (`frontend/`) | Implemented & Build-Tested | Production Build Passing (`dist/`) | Browser UI (Port 5173 / 8000) |
+| **Admin Session Security** (`api/auth.py`) | Implemented & Unit-Tested | Login/Logout/401/Cookie Tests Passing | HTTP-only Cookie Authentication |
+| **Pure Python OF 1.3 Controller** (`sdn/controller.py`) | Implemented & Unit-Tested | 5/5 Controller Tests Passing | Tested on Windows + Linux |
+| **Historical Performance Dashboard** | Implemented & Verified | Real JSON Data Loaded | Recharts & Dataset Table |
+| **Mininet Host Gateway Route (h2 → OVS → h1)** | Packaging Complete | Documented & Packaged | **Pending Live Ubuntu Mininet Verification** |
+| **Live Controller Handshake in Topology** | Implementation Ready | Unit-Tested with Mock Switch | **Pending Live Ubuntu Mininet Verification** |
+| **Kernel Linux HTB Queue Prioritization** | Scripts Configured | Validated in Baseline Runs | **Pending Live Ubuntu Mininet Verification** |
+| **Dynamic Queue 1 Switching Under Live Flood** | Rule Logic Tested | OpenFlow Flow-Mod Tested | **Pending Live Ubuntu Mininet Verification** |
 
 ---
 
@@ -114,15 +117,17 @@ Select **Option [5]** (*Launch ALL 3 Web Components*).
 ### Step 8: Open the Administration Dashboard
 **Action:**
 1. Click **Admin Dashboard** in the top navigation (`http://localhost:5173/admin`).
-2. Show the **Admin API Key Access Control**:
-   - Notice the key indicator: `Key: sdn-...2026`.
-   - Point out that without this key, requests receive `403 Forbidden`.
+2. Show the **Administrator Session Authentication Gate**:
+   - If not logged in, demonstrate the secure login gate. Point out that administrative access is strictly protected on the server side against `ADMIN_PASSWORD`.
+   - Enter the server administrator credential and sign in.
+   - Point out the `Admin Session Active` badge backed by an HMAC-SHA256 signed HTTP-only cookie.
 3. Show the **Live Active TCP Student Streams**:
    - If an exam is in progress, the student's active TCP connection is listed with start time and socket state.
 4. Show the **Persistent Examination Results Table**:
    - The test result from Alice Smith is permanently archived in SQLite.
    - Demonstrate the search box (type "Alice") and the status filters ("Passed", "Completed").
 5. Show the KPI summary cards: Total Completed Exams, Average Score, Highest Score, Active Sessions.
+6. Demonstrate **Logout**: Click **Log Out** to clear the session cookie and return to the login gate.
 
 ---
 
@@ -157,12 +162,12 @@ Select **Option [5]** (*Launch ALL 3 Web Components*).
 **Action:**
 Scroll to Section 2 of the SDN dashboard: **Empirical Performance Benchmarks**.
 **Point out the verified data recorded in Mininet:**
-- **Average Latency**: Reduced from **289.54 ms** (Baseline) to **30.15 ms** (Dynamic SDN) under 10 clients — an **89.6% reduction**.
-- **P95 Latency**: Dropped from **391.09 ms** to **35.93 ms** (**90.8% reduction**).
-- **Throughput**: Increased by **+150.0%** (from 11.0 to 27.5 req/s).
-- **Packet Loss**: Dropped from **11.0%** to **0.0%**.
-- **Jain's Fairness Index**: Rose to **0.9834**, ensuring all candidates receive equitable bandwidth.
+- **Average Latency**: Reduced from **23.75 ms** (Baseline) to **10.30 ms** (Dynamic SDN) under 10 clients (**-56.6% reduction**), and from **53.81 ms** to **19.00 ms** under 20 clients (**-64.7% reduction**).
+- **P95 Latency**: Reduced from **66.79 ms** to **38.84 ms** (**-41.8%**) under 10 clients, and from **139.41 ms** to **90.39 ms** (**-35.2%**) under 20 clients.
+- **Throughput**: Increased by **+52.6%** at 10 clients (205.45 → 313.52 req/s) and by **+143.9%** at 20 clients (194.74 → 474.94 req/s).
+- **Packet Loss**: Maintained at **0.0%** across both architectures due to reliable TCP socket retransmissions.
+- **Jain's Fairness Index**: Consistently high across all runs (0.9243 → 0.9938 at 5 clients; ~0.99 at 10 and 20 clients), ensuring equitable service.
 
 **Conclude with Ubuntu Deployment Readiness:**
 - All controller code, Mininet topology scripts, and test suites are packaged and verified.
-- Live validation will be demonstrated inside the Ubuntu VM following [docs/MININET_DEPLOYMENT.md](MININET_DEPLOYMENT.md).
+- The web application (FastAPI + React) is implemented and unit-tested; live validation of the web prototype traversing Mininet hosts and OVS switch is pending the final Ubuntu VM session (see [docs/MININET_DEPLOYMENT.md](MININET_DEPLOYMENT.md)).

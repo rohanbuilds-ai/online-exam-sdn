@@ -178,14 +178,15 @@ Exam Server (:5000)            (Linux HTB Queues)             FastAPI Gateway (:
 | `GATEWAY_HOST` | `0.0.0.0` | Listen host for FastAPI gateway |
 | `GATEWAY_PORT` | `8000` | Listen port for FastAPI gateway |
 | `DB_PATH` | `exam_records.db` | SQLite database file path |
-| `ADMIN_API_KEY` | `sdn-admin-key-2026` | Secret key for administrative API endpoints |
-| `REQUIRE_ADMIN_AUTH` | `true` | Enforces `X-Admin-Key` header on `/api/admin/*` |
+| `ADMIN_PASSWORD` | *(None / Required)* | Server-side password required to log into `/admin` |
+| `SESSION_SECRET` | *(Random 256-bit)* | Secret key for signing HTTP-only HMAC-SHA256 session cookies |
+| `SESSION_COOKIE_SECURE` | `false` | Sets `Secure` flag on session cookie (set true if using HTTPS) |
+| `SESSION_MAX_AGE_SEC` | `28800` | Session lifetime in seconds (8 hours) |
 | `SDN_ENABLED` | `false` | Enables live SDN controller integration |
 | `START_EXAM_SERVER` | `false` | Automatically starts in-process TCP server |
 | `CORS_ORIGINS` | `http://localhost:5173,...` | Allowed CORS origins for web requests |
 | `VITE_API_URL` | `http://localhost:8000` | Frontend backend API URL |
 | `VITE_WS_URL` | `ws://localhost:8000` | Frontend WebSocket endpoint |
-| `VITE_ADMIN_API_KEY` | `sdn-admin-key-2026` | Frontend admin key for administrative dashboard |
 
 ---
 

@@ -1,478 +1,529 @@
-"""
-Complete OpenFlow 1.3 SDN Controller for Online Examination Network.
+#!/usr/bin/env python3
+"""A small, dependency-free OpenFlow 1.3 controller for the exam network.
 
-Integrates:
-- Reliable switch connection handling & handshake
-- Table-miss rule installation (Priority 0)
-- MAC address learning & dynamic L2 forwarding (Priority 100)
-- Periodic Multipart Port Statistics collection & traffic rate computation
-- Adaptive congestion detection & dynamic QoS flow prioritization (Priority 1000)
+Supports one or more OpenFlow switches, L2 MAC learning, periodic port-stat
+polling, and congestion-triggered prioritization of TCP/5000 traffic to the
+configured examination server.
 """
+
+from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
+import signal
 import socket
 import struct
 import sys
 import threading
 import time
-from typing import Dict, Optional, Tuple, Any, Set
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Set, Tuple
 
-from sdn.openflow13 import (
+# Allow both `python -m sdn.controller` and `python sdn/controller.py`.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from sdn.congestion_manager import (  # noqa: E402
+    CongestionManager,
+    STATE_CONGESTED,
+    STATE_NORMAL,
+)
+from sdn.flow_manager import FlowManager  # noqa: E402
+from sdn.openflow13 import (  # noqa: E402
+    OFP_NO_BUFFER,
     OFP_VERSION,
-    OFPT_HELLO,
-    OFPT_ERROR,
+    OFPP_FLOOD,
     OFPT_ECHO_REQUEST,
     OFPT_FEATURES_REPLY,
-    OFPT_PACKET_IN,
+    OFPT_HELLO,
     OFPT_MULTIPART_REPLY,
-    OFPP_FLOOD,
-    pack_hello,
+    OFPT_PACKET_IN,
+    OFPT_PORT_STATUS,
+    OFPMP_PORT_STATS,
     pack_echo_reply,
     pack_features_request,
-    pack_set_config,
+    pack_header,
+    pack_hello,
     pack_packet_out,
     pack_port_stats_request,
+    pack_set_config,
+    unpack_header,
     unpack_port_stats_reply,
-    parse_packet_in,
 )
-from sdn.flow_manager import FlowManager
-from sdn.traffic_monitor import TrafficMonitor
-from sdn.congestion_manager import CongestionManager, STATE_CONGESTED, STATE_NORMAL
+from sdn.traffic_monitor import TrafficMonitor  # noqa: E402
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] [%(levelname)s] [CONTROLLER] %(message)s",
-    datefmt="%H:%M:%S",
-)
-logger = logging.getLogger("SDNController")
+LOG = logging.getLogger("SDNController")
+OFPMPF_REPLY_MORE = 1
 
 
-class SwitchConnection:
-    """Represents an active OpenFlow switch connection."""
-
-    def __init__(self, sock: Any, address: Tuple[str, int]):
-        self.sock = sock
-        self.address = address
-        self.mac_to_port: Dict[bytes, int] = {}
-        self.ready: bool = False
-        self.dpid: Optional[int] = None
-
-    def send(self, data: bytes) -> None:
-        """Send raw bytes over the switch socket."""
-        self.sock.sendall(data)
-
-    def close(self) -> None:
-        """Close the switch socket."""
+def _recv_exact(sock: socket.socket, size: int) -> Optional[bytes]:
+    """Read exactly size bytes; return None on a clean/partial disconnect."""
+    chunks = bytearray()
+    while len(chunks) < size:
         try:
-            self.sock.close()
-        except Exception:
-            pass
+            part = sock.recv(size - len(chunks))
+        except InterruptedError:
+            continue
+        if not part:
+            return None
+        chunks.extend(part)
+    return bytes(chunks)
+
+
+def _parse_mac(value: str) -> bytes:
+    try:
+        result = bytes.fromhex(value.replace(":", "").replace("-", ""))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"Invalid MAC address: {value}") from exc
+    if len(result) != 6:
+        raise argparse.ArgumentTypeError("MAC address must contain exactly 6 bytes")
+    return result
+
+
+@dataclass(eq=False)
+class SwitchConnection:
+    sock: socket.socket
+    address: Tuple[str, int]
+    send_lock: threading.Lock = field(default_factory=threading.Lock)
+    xid_lock: threading.Lock = field(default_factory=threading.Lock)
+    next_xid: int = 1
+    dpid: Optional[int] = None
+    n_buffers: int = 0
+    n_tables: int = 0
+    ready: bool = False
+    hello_received: bool = False
+    closed: bool = False
+    mac_to_port: Dict[bytes, int] = field(default_factory=dict)
+    multipart_port_stats: Dict[int, List[dict]] = field(default_factory=dict)
+    thread: Optional[threading.Thread] = None
+
+    def allocate_xid(self) -> int:
+        with self.xid_lock:
+            xid = self.next_xid
+            self.next_xid = (self.next_xid + 1) & 0xFFFFFFFF
+            if self.next_xid == 0:
+                self.next_xid = 1
+            return xid
 
 
 class SDNController:
+    """OpenFlow listener and policy coordinator for the examination network."""
+
     def __init__(
         self,
         host: str = "0.0.0.0",
         port: int = 6653,
-        monitor_interval_sec: float = 2.0,
-        link_bw_mbps: float = 10.0,
-        congestion_threshold: float = 70.0,
-        server_mac_str: str = "00:00:00:00:00:01",
+        link_bandwidth_mbps: float = 10.0,
+        congestion_threshold_percent: float = 70.0,
+        recovery_threshold_percent: float = 35.0,
+        cooldown_period_sec: float = 4.0,
+        stats_interval_sec: float = 2.0,
         server_port: int = 1,
-        stats_interval_sec: Optional[float] = None,
-    ):
+        server_mac: bytes = bytes.fromhex("000000000001"),
+    ) -> None:
+        if not (1 <= port <= 65535):
+            raise ValueError("Controller TCP port must be between 1 and 65535")
+        if link_bandwidth_mbps <= 0:
+            raise ValueError("Link bandwidth must be positive")
+        if stats_interval_sec <= 0:
+            raise ValueError("Statistics interval must be positive")
+        if len(server_mac) != 6:
+            raise ValueError("Server MAC address must be exactly 6 bytes")
+
         self.host = host
         self.port = port
-        self.monitor_interval_sec = (
-            stats_interval_sec if stats_interval_sec is not None else monitor_interval_sec
-        )
-        self.stats_interval_sec = self.monitor_interval_sec
-        self.link_bw_mbps = link_bw_mbps
-        self.congestion_threshold = congestion_threshold
-        self.server_mac = bytes.fromhex(server_mac_str.replace(":", ""))
         self.server_port = server_port
+        self.server_mac = server_mac
+        self.stats_interval_sec = stats_interval_sec
 
-        self.server_sock: Optional[socket.socket] = None
-        self.is_running = False
+        self.stop_event = threading.Event()
+        self.listener: Optional[socket.socket] = None
         self.connections: Set[SwitchConnection] = set()
-        self.switch_conns: Dict[Any, socket.socket] = {}
-        self.mac_tables: Dict[Any, Dict[bytes, int]] = {}
-        self.xid_counter = 1
-        self._lock = threading.Lock()
+        self.connections_lock = threading.RLock()
+        self.stats_thread: Optional[threading.Thread] = None
 
-        # Traffic Monitor & Adaptive Congestion Manager
-        self.traffic_monitor = TrafficMonitor(link_bandwidth_mbps=self.link_bw_mbps)
+        self.traffic_monitor = TrafficMonitor(link_bandwidth_mbps=link_bandwidth_mbps)
         self.congestion_manager = CongestionManager(
-            server_port=self.server_port,
-            congestion_threshold_percent=self.congestion_threshold,
+            server_port=server_port,
+            congestion_threshold_percent=congestion_threshold_percent,
+            recovery_threshold_percent=recovery_threshold_percent,
+            cooldown_period_sec=cooldown_period_sec,
             on_policy_change=self._on_policy_change,
         )
 
-        self._monitor_thread: Optional[threading.Thread] = None
+    def _send(self, conn: SwitchConnection, message: bytes) -> bool:
+        if conn.closed:
+            return False
+        try:
+            with conn.send_lock:
+                if conn.closed:
+                    return False
+                conn.sock.sendall(message)
+            return True
+        except (OSError, ConnectionError) as exc:
+            LOG.warning("Send to switch %s failed: %s", conn.address, exc)
+            self._drop_connection(conn)
+            return False
 
-    def _get_next_xid(self) -> int:
-        with self._lock:
-            self.xid_counter += 1
-            return self.xid_counter
+    def _send_features_request(self, conn: SwitchConnection) -> None:
+        self._send(conn, pack_features_request(conn.allocate_xid()))
 
-    def start(self, blocking: bool = True) -> None:
-        """Start the OpenFlow controller socket listener."""
-        self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_sock.bind((self.host, self.port))
-        self.server_sock.listen(10)
-        self.server_sock.settimeout(1.0)
-        self.is_running = True
+    def _send_port_stats_request(self, conn: SwitchConnection) -> None:
+        if conn.ready and not conn.closed:
+            self._send(conn, pack_port_stats_request(conn.allocate_xid()))
 
-        logger.info(f"OpenFlow 1.3 SDN Controller listening on {self.host}:{self.port}")
-        logger.info(
-            f"Dynamic Congestion Threshold: {self.congestion_threshold}% link capacity ({self.link_bw_mbps} Mbps)"
+    def _drop_connection(self, conn: SwitchConnection) -> None:
+        with self.connections_lock:
+            if conn.closed:
+                return
+            conn.closed = True
+            conn.ready = False
+            self.connections.discard(conn)
+        try:
+            conn.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            conn.sock.close()
+        except OSError:
+            pass
+        LOG.info("Switch disconnected: %s (DPID=%s)", conn.address, conn.dpid)
+
+    def serve_forever(self) -> None:
+        """Bind the OpenFlow TCP port and serve switch connections."""
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind((self.host, self.port))
+        listener.listen(16)
+        listener.settimeout(0.5)
+        self.listener = listener
+
+        LOG.info("OpenFlow 1.3 controller listening on %s:%d", self.host, self.port)
+        self.stats_thread = threading.Thread(
+            target=self._statistics_loop, name="port-statistics-poller", daemon=True
         )
+        self.stats_thread.start()
 
-        # Start periodic traffic monitoring thread
-        self._monitor_thread = threading.Thread(target=self._periodic_monitor_loop, daemon=True)
-        self._monitor_thread.start()
+        try:
+            while not self.stop_event.is_set():
+                try:
+                    peer, address = listener.accept()
+                except socket.timeout:
+                    continue
+                except OSError:
+                    if self.stop_event.is_set():
+                        break
+                    raise
 
-        if blocking:
-            self._listen_loop()
-        else:
-            t = threading.Thread(target=self._listen_loop, daemon=True)
-            t.start()
+                peer.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                conn = SwitchConnection(sock=peer, address=address)
+                with self.connections_lock:
+                    self.connections.add(conn)
+
+                LOG.info("Switch connected from %s:%d", *address)
+                # Send our hello immediately; request features after the peer's hello.
+                if self._send(conn, pack_hello(conn.allocate_xid())):
+                    conn.thread = threading.Thread(
+                        target=self._connection_loop,
+                        args=(conn,),
+                        name=f"openflow-{address[0]}-{address[1]}",
+                        daemon=True,
+                    )
+                    conn.thread.start()
+        finally:
+            self.stop()
 
     def stop(self) -> None:
-        self.is_running = False
-        if self.server_sock:
+        self.stop_event.set()
+        if self.listener is not None:
             try:
-                self.server_sock.close()
-            except Exception:
-                pass
-        with self._lock:
-            for conn in list(self.connections):
-                conn.close()
-            self.connections.clear()
-            self.switch_conns.clear()
-            self.mac_tables.clear()
-        logger.info("SDN Controller stopped.")
-
-    def _listen_loop(self) -> None:
-        while self.is_running:
-            try:
-                conn_sock, addr = self.server_sock.accept()
-                t = threading.Thread(target=self._handle_switch, args=(conn_sock, addr), daemon=True)
-                t.start()
-            except (socket.timeout, TimeoutError):
-                continue
+                self.listener.close()
             except OSError:
-                break
+                pass
+            self.listener = None
 
-    def _receive_exact(self, conn: socket.socket, num_bytes: int) -> Optional[bytes]:
-        data = bytearray()
-        while len(data) < num_bytes:
-            try:
-                chunk = conn.recv(num_bytes - len(data))
-            except (socket.timeout, TimeoutError):
-                continue
-            except (OSError, ConnectionError):
-                return None
-            if not chunk:
-                return None
-            data.extend(chunk)
-        return bytes(data)
+        with self.connections_lock:
+            peers = list(self.connections)
+        for conn in peers:
+            self._drop_connection(conn)
 
-    def _handle_switch(self, conn_sock: socket.socket, address: Tuple[str, int]) -> None:
-        logger.info(f"Switch connected from {address}")
-        conn_sock.settimeout(1.0)
-        conn = SwitchConnection(conn_sock, address)
-        with self._lock:
-            self.connections.add(conn)
-            self.switch_conns[address] = conn_sock
-            self.mac_tables[address] = conn.mac_to_port
+        if self.stats_thread and self.stats_thread is not threading.current_thread():
+            self.stats_thread.join(timeout=2.0)
 
-        # Controller sends initial OFPT_HELLO upon connection establishment
+    def _connection_loop(self, conn: SwitchConnection) -> None:
         try:
-            conn.send(pack_hello(self._get_next_xid()))
-        except Exception as err:
-            logger.warning(f"Failed to send initial HELLO to {address}: {err}")
-
-        try:
-            while self.is_running:
-                header = self._receive_exact(conn_sock, 8)
-                if not header:
+            while not self.stop_event.is_set() and not conn.closed:
+                header = _recv_exact(conn.sock, 8)
+                if header is None:
+                    break
+                try:
+                    version, msg_type, length, xid = unpack_header(header)
+                except struct.error:
+                    LOG.warning("Malformed OpenFlow header from %s", conn.address)
                     break
 
-                version, msg_type, length, rx_xid = struct.unpack("!BBHI", header)
                 if version != OFP_VERSION:
-                    logger.error(f"Unsupported OpenFlow version {version} from {address}")
+                    LOG.warning(
+                        "Rejecting %s: OpenFlow version %d received; expected 1.3 (wire version 4)",
+                        conn.address,
+                        version,
+                    )
+                    break
+                if length < 8 or length > 65535:
+                    LOG.warning("Invalid OpenFlow message length %d from %s", length, conn.address)
                     break
 
-                body_len = length - 8
-                body = self._receive_exact(conn_sock, body_len) if body_len > 0 else b""
+                body = _recv_exact(conn.sock, length - 8)
                 if body is None:
                     break
-
-                self._handle_message(conn, msg_type, rx_xid, body)
-
-        except Exception as err:
-            logger.warning(f"Switch connection handler error ({address}): {err}")
+                self._handle_message(conn, msg_type, xid, body)
+        except (OSError, ConnectionError) as exc:
+            if not conn.closed and not self.stop_event.is_set():
+                LOG.info("Connection %s ended: %s", conn.address, exc)
         finally:
-            with self._lock:
-                self.connections.discard(conn)
-                self.switch_conns.pop(address, None)
-                self.mac_tables.pop(address, None)
-            conn.close()
-            logger.info(f"Switch disconnected from {address}")
+            self._drop_connection(conn)
 
-    def _handle_message(
-        self,
-        conn: SwitchConnection,
-        msg_type: int,
-        rx_xid: int,
-        body: bytes,
-    ) -> None:
-        """Dispatch received OpenFlow message to the appropriate handler."""
-        # 1. OFPT_HELLO
+    def _handle_message(self, conn: SwitchConnection, msg_type: int, xid: int, body: bytes) -> None:
         if msg_type == OFPT_HELLO:
-            logger.info(f"Received OFPT_HELLO from switch {conn.address}")
-            conn.send(pack_features_request(self._get_next_xid()))
-
-        # 2. OFPT_ECHO_REQUEST
-        elif msg_type == OFPT_ECHO_REQUEST:
-            conn.send(pack_echo_reply(rx_xid, body))
-
-        # 3. OFPT_FEATURES_REPLY
-        elif msg_type == OFPT_FEATURES_REPLY:
-            self._handle_features_reply(conn, body)
-
-        # 4. OFPT_PACKET_IN
-        elif msg_type == OFPT_PACKET_IN:
-            self._handle_packet_in(conn, body)
-
-        # 5. OFPT_MULTIPART_REPLY (Port Statistics)
-        elif msg_type == OFPT_MULTIPART_REPLY:
-            self._handle_multipart_reply(conn, body)
-
-        # 6. OFPT_ERROR
-        elif msg_type == OFPT_ERROR:
-            logger.warning(f"Switch {conn.address} sent OpenFlow error: {body.hex()}")
-
-    def _handle_features_reply(self, conn: SwitchConnection, body: bytes) -> None:
-        """Handle OFPT_FEATURES_REPLY: configure switch, table miss rule, and start stats."""
-        logger.info(f"Received OFPT_FEATURES_REPLY from switch {conn.address}")
-        if len(body) >= 8:
-            conn.dpid = struct.unpack("!Q", body[:8])[0]
-        conn.ready = True
-
-        # 1. Set Config (OFPT_SET_CONFIG, msg_type 9)
-        conn.send(pack_set_config(self._get_next_xid()))
-
-        # 2. Install Table-Miss Flow Rule (Priority 0 -> Controller)
-        table_miss_msg = FlowManager.create_table_miss_rule(self._get_next_xid())
-        conn.send(table_miss_msg)
-        logger.info(f"Installed Table-Miss Rule (Priority 0) on switch {conn.address} (DPID={conn.dpid})")
-
-        # 3. Request initial Port Statistics
-        conn.send(pack_port_stats_request(self._get_next_xid()))
-
-    def _handle_packet_in(self, conn: SwitchConnection, body: bytes) -> None:
-        """Handle OFPT_PACKET_IN: learn source MAC, install flow rule if known, or flood."""
-        pkt_info = parse_packet_in(body)
-        if not pkt_info:
+            if not conn.hello_received:
+                conn.hello_received = True
+                LOG.info("OpenFlow 1.3 hello received from %s", conn.address)
+                self._send_features_request(conn)
             return
 
-        buffer_id, in_port, src_mac, dst_mac, packet = pkt_info
+        if msg_type == OFPT_ECHO_REQUEST:
+            self._send(conn, pack_echo_reply(xid=xid, payload=body))
+            return
+
+        if msg_type == OFPT_FEATURES_REPLY:
+            self._handle_features_reply(conn, body)
+            return
+
+        if msg_type == OFPT_PACKET_IN:
+            self._handle_packet_in(conn, body)
+            return
+
+        if msg_type == OFPT_MULTIPART_REPLY:
+            self._handle_multipart_reply(conn, xid, body)
+            return
+
+        if msg_type == OFPT_PORT_STATUS:
+            LOG.info("Port status event from DPID=%s: %s", conn.dpid, body.hex())
+            return
+
+        # FLOW_REMOVED, BARRIER_REPLY and other asynchronous notifications are
+        # intentionally harmless to ignore for this topology.
+        if msg_type == 1:  # OFPT_ERROR
+            LOG.error("OpenFlow error from DPID=%s (xid=%d): %s", conn.dpid, xid, body.hex())
+
+    def _handle_features_reply(self, conn: SwitchConnection, body: bytes) -> None:
+        # ofp_switch_features is 24 bytes in OpenFlow 1.3.
+        if len(body) < 24:
+            LOG.error("Short features reply from %s (%d bytes)", conn.address, len(body))
+            return
+        dpid, n_buffers, n_tables, _aux_id, capabilities, _reserved = struct.unpack(
+            "!QIBB2xII", body[:24]
+        )
+        conn.dpid = dpid
+        conn.n_buffers = n_buffers
+        conn.n_tables = n_tables
+        conn.ready = True
+
+        LOG.info(
+            "Switch ready: DPID=%016x buffers=%d tables=%d capabilities=0x%x",
+            dpid,
+            n_buffers,
+            n_tables,
+            capabilities,
+        )
+        # Ask the switch to send complete packet-in frames, then install table miss.
+        self._send(conn, pack_set_config(conn.allocate_xid(), miss_send_len=65535))
+        table_miss = FlowManager.create_table_miss_rule(conn.allocate_xid())
+        self._send(conn, table_miss)
+        self._send_port_stats_request(conn)
+        LOG.info("Installed table-miss rule on DPID=%016x", dpid)
+
+    def _handle_packet_in(self, conn: SwitchConnection, body: bytes) -> None:
+        # parse_packet_in returns (buffer_id, in_port, src_mac, dst_mac, frame).
+        from sdn.openflow13 import parse_packet_in
+
+        parsed = parse_packet_in(body)
+        if parsed is None:
+            LOG.debug("Ignoring unparseable packet-in from DPID=%s", conn.dpid)
+            return
+
+        buffer_id, in_port, src_mac, dst_mac, frame = parsed
+        if len(src_mac) != 6 or len(dst_mac) != 6:
+            return
+
+        # Learn source MAC -> ingress port. A host move updates the mapping.
+        old_port = conn.mac_to_port.get(src_mac)
         conn.mac_to_port[src_mac] = in_port
+        if old_port is not None and old_port != in_port:
+            LOG.info(
+                "MAC %s moved from port %d to port %d on DPID=%s",
+                src_mac.hex(":"), old_port, in_port, conn.dpid
+            )
 
-        src_str = src_mac.hex(":")
-        dst_str = dst_mac.hex(":")
-
-        if dst_mac in conn.mac_to_port and conn.mac_to_port[dst_mac] != in_port:
+        # Broadcast and multicast destinations must be flooded. Unknown unicast
+        # is also flooded until its destination MAC has been learned.
+        if (dst_mac[0] & 1) or dst_mac not in conn.mac_to_port:
+            out_port = OFPP_FLOOD
+        else:
             out_port = conn.mac_to_port[dst_mac]
 
-            # If dynamic QoS is congested and this is exam traffic, install priority rule
-            if self.congestion_manager.current_state == STATE_CONGESTED and (
-                dst_mac == self.server_mac or src_mac == self.server_mac
-            ):
-                is_ingress = dst_mac == self.server_mac
-                flow_msg = FlowManager.create_exam_qos_rule(
-                    xid=self._get_next_xid(),
-                    dst_mac=dst_mac,
-                    out_port=out_port,
-                    queue_id=1,  # Dedicated High Priority Queue
+        if out_port == in_port:
+            LOG.debug("Dropping packet whose destination is on ingress port %d", in_port)
+            return
+
+        if out_port != OFPP_FLOOD:
+            flow = FlowManager.create_l2_forwarding_rule(
+                xid=conn.allocate_xid(), dst_mac=dst_mac, out_port=out_port
+            )
+            self._send(conn, flow)
+
+        # If the switch retained the packet, refer to its buffer and omit packet
+        # bytes; otherwise include the complete frame in PACKET_OUT.
+        packet_data = b"" if buffer_id != OFP_NO_BUFFER else frame
+        packet_out = pack_packet_out(
+            xid=conn.allocate_xid(),
+            packet=packet_data,
+            out_port=out_port,
+            in_port=in_port,
+            buffer_id=buffer_id,
+        )
+        self._send(conn, packet_out)
+
+    def _handle_multipart_reply(self, conn: SwitchConnection, xid: int, body: bytes) -> None:
+        if len(body) < 8:
+            return
+        mp_type, flags = struct.unpack("!HH", body[:4])
+        if mp_type != OFPMP_PORT_STATS:
+            return
+
+        entries = unpack_port_stats_reply(body)
+        pending = conn.multipart_port_stats.setdefault(xid, [])
+        pending.extend(entries)
+        if flags & OFPMPF_REPLY_MORE:
+            return
+
+        complete_entries = conn.multipart_port_stats.pop(xid, pending)
+        metrics = self.traffic_monitor.update_port_stats(complete_entries)
+        if metrics:
+            LOG.debug("Updated port telemetry: %s", metrics)
+            self.congestion_manager.evaluate_network_conditions(metrics)
+
+    def _statistics_loop(self) -> None:
+        while not self.stop_event.wait(self.stats_interval_sec):
+            with self.connections_lock:
+                peers = list(self.connections)
+            for conn in peers:
+                if conn.ready and not conn.closed:
+                    self._send_port_stats_request(conn)
+
+    def _on_policy_change(self, state: str, port_no: int) -> None:
+        """Install the queue policy on the server-facing switch port."""
+        if port_no != self.server_port:
+            LOG.warning(
+                "Congestion reported on port %d, but exam server is configured on port %d; "
+                "no exam QoS rule installed",
+                port_no,
+                self.server_port,
+            )
+            return
+
+        with self.connections_lock:
+            peers = [c for c in self.connections if c.ready and not c.closed]
+
+        queue_id = 1 if state == STATE_CONGESTED else 0
+        installed = 0
+        for conn in peers:
+            xid = conn.allocate_xid()
+            if state == STATE_CONGESTED:
+                message = FlowManager.create_exam_qos_rule(
+                    xid=xid,
+                    dst_mac=self.server_mac,
+                    out_port=self.server_port,
+                    queue_id=queue_id,
                     priority=1000,
-                    is_server_ingress=is_ingress,
+                    is_server_ingress=True,
                 )
-                logger.info(
-                    f"[DYNAMIC SDN FLOW] Installed High-Priority QoS Flow for Exam Traffic ({dst_str} -> Port {out_port}, Queue 1)"
+            elif state == STATE_NORMAL:
+                message = FlowManager.modify_exam_queue(
+                    xid=xid,
+                    dst_mac=self.server_mac,
+                    out_port=self.server_port,
+                    new_queue_id=queue_id,
+                    priority=1000,
+                    is_server_ingress=True,
                 )
             else:
-                flow_msg = FlowManager.create_l2_forwarding_rule(
-                    xid=self._get_next_xid(),
-                    dst_mac=dst_mac,
-                    out_port=out_port,
-                    priority=100,
-                )
-                logger.info(f"[L2 FORWARDING] Learned {dst_str} -> Port {out_port}")
+                continue
+            if self._send(conn, message):
+                installed += 1
 
-            conn.send(flow_msg)
-            conn.send(pack_packet_out(self._get_next_xid(), packet, out_port, in_port=in_port))
-        else:
-            # Flood unknown destination
-            conn.send(pack_packet_out(self._get_next_xid(), packet, OFPP_FLOOD, in_port=in_port))
-
-    def _handle_multipart_reply(self, conn: SwitchConnection, body: bytes) -> None:
-        """Handle OFPT_MULTIPART_REPLY: extract port statistics and evaluate congestion."""
-        entries = unpack_port_stats_reply(body)
-        if entries:
-            updated_metrics = self.traffic_monitor.update_port_stats(entries)
-            self.congestion_manager.evaluate_network_conditions(updated_metrics)
-
-    def _process_packet_in(self, conn: Any, address: Any, body: bytes) -> None:
-        """Backward-compatibility wrapper for packet_in processing."""
-        if isinstance(conn, SwitchConnection):
-            self._handle_packet_in(conn, body)
-        else:
-            match_conn = next((c for c in self.connections if c.address == address), None)
-            if not match_conn:
-                match_conn = SwitchConnection(conn, address)
-                if address in self.mac_tables:
-                    match_conn.mac_to_port = self.mac_tables[address]
-            self._handle_packet_in(match_conn, body)
-
-    def _export_telemetry_snapshot(self) -> None:
-        """Export telemetry snapshot to results/sdn_telemetry_snapshot.json for web gateway."""
-        try:
-            results_dir = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "results"
-            )
-            os.makedirs(results_dir, exist_ok=True)
-            snapshot_path = os.path.join(results_dir, "sdn_telemetry_snapshot.json")
-            with self._lock:
-                switches_data = [
-                    {
-                        "dpid": getattr(c, "dpid", None),
-                        "address": list(getattr(c, "address", ())),
-                        "ready": getattr(c, "ready", False),
-                    }
-                    for c in self.connections
-                ]
-
-            port_metrics = []
-            if hasattr(self.traffic_monitor, "port_metrics"):
-                port_metrics = list(self.traffic_monitor.port_metrics.values())
-
-            data = {
-                "controller_connected": True,
-                "switch_count": len(self.connections),
-                "switches": switches_data,
-                "port_stats": port_metrics,
-                "congestion_state": self.congestion_manager.current_state,
-                "policy_active": self.congestion_manager.current_state == STATE_CONGESTED,
-                "queue_assignment": (
-                    1 if self.congestion_manager.current_state == STATE_CONGESTED else 0
-                ),
-                "policy_events": self.congestion_manager.get_decision_history(),
-                "timestamp": time.time(),
-            }
-            tmp_path = snapshot_path + ".tmp"
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(data, f)
-            os.replace(tmp_path, snapshot_path)
-        except Exception:
-            pass
-
-    def _periodic_monitor_loop(self) -> None:
-        """Poll switches for port statistics on every monitor interval."""
-        while self.is_running:
-            time.sleep(self.monitor_interval_sec)
-            with self._lock:
-                conns = [c for c in self.connections if getattr(c, "ready", True)]
-
-            for conn in conns:
-                try:
-                    req = pack_port_stats_request(self._get_next_xid())
-                    conn.send(req)
-                except Exception:
-                    pass
-            self._export_telemetry_snapshot()
-
-    def _on_policy_change(self, new_state: str, bottleneck_port: int) -> None:
-        """Invoked when CongestionManager changes state."""
-        with self._lock:
-            conns = [c for c in self.connections if getattr(c, "ready", True)]
-
-        if new_state == STATE_CONGESTED:
-            logger.warning(
-                f"*** TRIGGERING ADAPTIVE SDN POLICY: CONGESTION DETECTED ON PORT {bottleneck_port} ***"
-            )
-            for conn in conns:
-                # Install high-priority rules for exam traffic to use Queue 1
-                rule_in = FlowManager.create_exam_qos_rule(
-                    xid=self._get_next_xid(),
-                    dst_mac=self.server_mac,
-                    out_port=self.server_port,
-                    queue_id=1,
-                    priority=1000,
-                    is_server_ingress=True,
-                )
-                try:
-                    conn.send(rule_in)
-                    logger.info("Dynamically prioritized incoming Examination TCP Traffic to Queue 1.")
-                except Exception:
-                    pass
-
-        elif new_state == STATE_NORMAL:
-            logger.info(f"*** SDN POLICY RESTORED: TRAFFIC NORMALIZED ON PORT {bottleneck_port} ***")
-            for conn in conns:
-                # Revert exam traffic to standard Queue 0
-                rule_normal = FlowManager.modify_exam_queue(
-                    xid=self._get_next_xid(),
-                    dst_mac=self.server_mac,
-                    out_port=self.server_port,
-                    new_queue_id=0,
-                    priority=1000,
-                    is_server_ingress=True,
-                )
-                try:
-                    conn.send(rule_normal)
-                    logger.info("Reverted Examination TCP Traffic to standard Best-Effort Queue 0.")
-                except Exception:
-                    pass
-
-        self._export_telemetry_snapshot()
-
-    _apply_sdn_policy = _on_policy_change
+        action = "ENABLED" if state == STATE_CONGESTED else "RESTORED"
+        LOG.warning(
+            "[SDN QoS %s] TCP destination port 5000 -> server %s via switch port %d, queue %d (%d switch(es))",
+            action,
+            self.server_mac.hex(":"),
+            self.server_port,
+            queue_id,
+            installed,
+        )
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="SDN OpenFlow 1.3 Controller with Dynamic Congestion Prioritization"
-    )
-    parser.add_argument("--host", default="0.0.0.0", help="Listen host (default: 0.0.0.0)")
-    parser.add_argument("--port", type=int, default=6653, help="Listen port (default: 6653)")
-    parser.add_argument("--bw", type=float, default=10.0, help="Link bandwidth in Mbps (default: 10.0)")
-    parser.add_argument("--threshold", type=float, default=70.0, help="Congestion threshold %% (default: 70.0)")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Custom OpenFlow 1.3 examination-network controller")
+    parser.add_argument("--host", default="0.0.0.0", help="Controller listen address")
+    parser.add_argument("--port", type=int, default=6653, help="OpenFlow TCP listen port")
+    parser.add_argument("--bw", type=float, default=10.0, help="Server-link capacity in Mbps")
+    parser.add_argument("--threshold", type=float, default=70.0, help="Congestion trigger percentage")
+    parser.add_argument("--recovery-threshold", type=float, default=35.0, help="Recovery percentage")
+    parser.add_argument("--cooldown", type=float, default=4.0, help="Recovery cooldown in seconds")
+    parser.add_argument("--stats-interval", type=float, default=2.0, help="Port stats polling interval")
+    parser.add_argument("--server-port", type=int, default=1, help="Switch port connected to exam server")
     parser.add_argument(
-        "--interval", type=float, default=2.0, help="Monitoring polling interval in seconds"
+        "--server-mac",
+        type=_parse_mac,
+        default=bytes.fromhex("000000000001"),
+        help="Exam server MAC address (default: 00:00:00:00:00:01)",
     )
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
 
     controller = SDNController(
         host=args.host,
         port=args.port,
-        link_bw_mbps=args.bw,
-        congestion_threshold=args.threshold,
-        monitor_interval_sec=args.interval,
+        link_bandwidth_mbps=args.bw,
+        congestion_threshold_percent=args.threshold,
+        recovery_threshold_percent=args.recovery_threshold,
+        cooldown_period_sec=args.cooldown,
+        stats_interval_sec=args.stats_interval,
+        server_port=args.server_port,
+        server_mac=args.server_mac,
     )
 
-    try:
-        controller.start(blocking=True)
-    except KeyboardInterrupt:
-        logger.info("Shutting down controller...")
+    def request_shutdown(_signum, _frame) -> None:
+        LOG.info("Shutdown signal received")
         controller.stop()
-        sys.exit(0)
+
+    signal.signal(signal.SIGINT, request_shutdown)
+    signal.signal(signal.SIGTERM, request_shutdown)
+    try:
+        controller.serve_forever()
+    except OSError as exc:
+        LOG.error("Could not start controller on %s:%d: %s", args.host, args.port, exc)
+        raise SystemExit(1) from exc
+    finally:
+        controller.stop()
 
 
 if __name__ == "__main__":

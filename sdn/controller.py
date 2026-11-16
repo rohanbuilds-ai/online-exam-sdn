@@ -9,6 +9,7 @@ configured examination server.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import signal
@@ -414,6 +415,7 @@ class SDNController:
         if metrics:
             LOG.debug("Updated port telemetry: %s", metrics)
             self.congestion_manager.evaluate_network_conditions(metrics)
+            self._export_telemetry_snapshot()
 
     def _statistics_loop(self) -> None:
         while not self.stop_event.wait(self.stats_interval_sec):
@@ -422,6 +424,80 @@ class SDNController:
             for conn in peers:
                 if conn.ready and not conn.closed:
                     self._send_port_stats_request(conn)
+            self._export_telemetry_snapshot()
+
+
+    def _export_telemetry_snapshot(self) -> None:
+        """Atomically publish real controller and OVS telemetry for the web API."""
+        try:
+            project_root = os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__))
+            )
+            snapshot_path = os.environ.get(
+                "SDN_TELEMETRY_SNAPSHOT",
+                os.path.join(
+                    project_root, "results", "sdn_telemetry_snapshot.json"
+                ),
+            )
+
+            controller_connected = (
+                self.listener is not None and not self.stop_event.is_set()
+            )
+
+            with self.connections_lock:
+                peers = list(self.connections)
+                switches = [
+                    {
+                        "dpid": (
+                            f"{conn.dpid:016x}"
+                            if conn.dpid is not None else None
+                        ),
+                        "address": list(conn.address),
+                        "ready": bool(conn.ready and not conn.closed),
+                    }
+                    for conn in peers
+                ]
+
+            state = self.congestion_manager.current_state
+            metrics = self.traffic_monitor.get_all_metrics()
+
+            snapshot = {
+                "controller_connected": controller_connected,
+                "switch_count": sum(1 for s in switches if s["ready"]),
+                "switches": switches,
+                "port_stats": sorted(
+                    metrics.values(),
+                    key=lambda item: item.get("port_no", 0),
+                ),
+                "congestion_state": (
+                    state if controller_connected else "DISCONNECTED"
+                ),
+                "policy_active": (
+                    controller_connected and state == STATE_CONGESTED
+                ),
+                "queue_assignment": (
+                    (1 if state == STATE_CONGESTED else 0)
+                    if controller_connected else None
+                ),
+                "policy_events": self.congestion_manager.get_decision_history()[
+                    -20:
+                ],
+                "timestamp": time.time(),
+            }
+
+            directory = os.path.dirname(snapshot_path) or "."
+            os.makedirs(directory, exist_ok=True)
+
+            temporary_path = f"{snapshot_path}.{os.getpid()}.tmp"
+            with open(temporary_path, "w", encoding="utf-8") as handle:
+                json.dump(snapshot, handle)
+                handle.flush()
+                os.fsync(handle.fileno())
+
+            os.replace(temporary_path, snapshot_path)
+
+        except Exception:
+            LOG.exception("Failed to export SDN telemetry snapshot")
 
     def _on_policy_change(self, state: str, port_no: int) -> None:
         """Install the queue policy on the server-facing switch port."""

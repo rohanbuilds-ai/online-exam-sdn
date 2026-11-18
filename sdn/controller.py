@@ -488,7 +488,7 @@ class SDNController:
             directory = os.path.dirname(snapshot_path) or "."
             os.makedirs(directory, exist_ok=True)
 
-            temporary_path = f"{snapshot_path}.{os.getpid()}.tmp"
+            temporary_path = f"{snapshot_path}.{os.getpid()}.{threading.get_ident()}.tmp"
             with open(temporary_path, "w", encoding="utf-8") as handle:
                 json.dump(snapshot, handle)
                 handle.flush()

@@ -42,13 +42,13 @@ DEFAULT_LINK_DELAY = "2ms"
 DEFAULT_LINK_MAX_QUEUE = 100
 
 # Open vSwitch QoS Configuration Commands (Hierarchical Token Bucket - HTB)
-# Queue 0: Best Effort (1-5 Mbps)
+# Queue 0: Best Effort (1-10 Mbps; yields to guaranteed exam traffic)
 # Queue 1: High-Priority Guaranteed Examination Traffic (7-10 Mbps)
 QOS_CONFIG_COMMANDS = [
     # Clear any previous QoS configuration on s1-eth1 (interface connecting s1 to server h1)
     "ovs-vsctl -- --all destroy QoS -- --all destroy Queue",
     "ovs-vsctl set port s1-eth1 qos=@newqos -- "
     "--id=@newqos create QoS type=linux-htb other-config:max-rate=10000000 queues=0=@q0,1=@q1 -- "
-    "--id=@q0 create Queue other-config:min-rate=1000000 other-config:max-rate=5000000 -- "
+    "--id=@q0 create Queue other-config:min-rate=1000000 other-config:max-rate=10000000 -- "
     "--id=@q1 create Queue other-config:min-rate=7000000 other-config:max-rate=10000000"
 ]

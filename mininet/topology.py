@@ -12,7 +12,7 @@ Hosts:
 Switch:
 - s1: Open vSwitch running OpenFlow 1.3
 - Port 1 (s1-eth1) configured with Linux HTB QoS Queues:
-    - Queue 0: Best Effort (1 - 5 Mbps)
+    - Queue 0: Best Effort (1 - 10 Mbps)
     - Queue 1: Guaranteed High-Priority Examination Traffic (7 - 10 Mbps)
 
 Controller:
@@ -54,7 +54,7 @@ def configure_ovs_qos():
             res = subprocess.run(cmd, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except subprocess.CalledProcessError as err:
             print(f"[QOS WARNING] QoS command failed: {err.stderr.decode()}")
-    print("[QOS] Queues initialized: Queue 0 (1-5 Mbps Best Effort), Queue 1 (7-10 Mbps Guaranteed Priority).")
+    print("[QOS] Queues initialized: Queue 0 (1-10 Mbps Best Effort), Queue 1 (7-10 Mbps Guaranteed Priority).")
     verify_ovs_qos()
 
 

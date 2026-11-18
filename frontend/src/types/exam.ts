@@ -70,7 +70,8 @@ export interface StudentResultRecord {
 }
 
 export interface ActiveSession {
-  gateway_session_id: string
+  id?: string
+  gateway_session_id?: string
   student_id: string
   student_name: string
   started_at: number

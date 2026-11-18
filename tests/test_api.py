@@ -78,6 +78,8 @@ class TestApiLayer(unittest.TestCase):
         active = store.list_active()
         self.assertEqual(len(active), 1)
         self.assertEqual(active[0]["student_id"], "STU999")
+        self.assertEqual(active[0]["id"], gid)
+        self.assertEqual(active[0]["gateway_session_id"], gid)
 
         # Remove
         store.remove(gid)

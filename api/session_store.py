@@ -94,13 +94,14 @@ class SessionStore:
     def list_active(self) -> List[Dict[str, Any]]:
         """
         Return metadata for every active session.
-        Each dict has: id, student_id, student_name, started_at.
+        Each dict has: id, gateway_session_id, student_id, student_name, started_at.
         """
         self._cleanup_stale()
         with self._lock:
             return [
                 {
                     "id": e.gateway_session_id,
+                    "gateway_session_id": e.gateway_session_id,
                     "student_id": e.student_id,
                     "student_name": e.student_name,
                     "started_at": e.started_at,

@@ -197,14 +197,18 @@ export const AdminDashboard: React.FC = () => {
 
   // 3. Authenticated Dashboard View
   const filteredResults = results.filter((r) => {
+    const studentId = r.student_id || ""
+    const studentName = r.name || ""
+    const query = searchQuery.toLowerCase()
     const matchesSearch =
-      r.student_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (r.name && r.name.toLowerCase().includes(searchQuery.toLowerCase()))
+      studentId.toLowerCase().includes(query) ||
+      studentName.toLowerCase().includes(query)
 
     const matchesStatus =
       statusFilter === "ALL" || r.status === statusFilter
 
-    const isPassed = r.percentage >= 50.0
+    const percentage = r.percentage ?? 0
+    const isPassed = percentage >= 50.0
     const matchesResult =
       resultFilter === "ALL" ||
       (resultFilter === "PASSED" && isPassed) ||
@@ -346,19 +350,23 @@ export const AdminDashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-amber-100 font-medium">
-                {sessions.map((sess) => (
-                  <tr key={sess.gateway_session_id} className="hover:bg-amber-100/30">
-                    <td className="py-2.5 px-3 font-mono text-slate-600">
-                      {sess.gateway_session_id.substring(0, 13)}...
-                    </td>
-                    <td className="py-2.5 px-3 font-bold text-slate-900">{sess.student_id}</td>
-                    <td className="py-2.5 px-3 text-slate-800">{sess.student_name}</td>
-                    <td className="py-2.5 px-3 text-slate-500">{formatDateTime(sess.started_at)}</td>
-                    <td className="py-2.5 px-3">
-                      <Badge variant="warning" className="animate-pulse">Active TCP Stream (Port 5000)</Badge>
-                    </td>
-                  </tr>
-                ))}
+                {sessions.map((sess, idx) => {
+                  const sessionId = sess.id || sess.gateway_session_id || `session-${idx}`
+                  const displayId = sessionId.length > 13 ? `${sessionId.substring(0, 13)}...` : sessionId
+                  return (
+                    <tr key={sessionId} className="hover:bg-amber-100/30">
+                      <td className="py-2.5 px-3 font-mono text-slate-600" title={sessionId}>
+                        {displayId}
+                      </td>
+                      <td className="py-2.5 px-3 font-bold text-slate-900">{sess.student_id || "—"}</td>
+                      <td className="py-2.5 px-3 text-slate-800">{sess.student_name || "—"}</td>
+                      <td className="py-2.5 px-3 text-slate-500">{sess.started_at ? formatDateTime(sess.started_at) : "—"}</td>
+                      <td className="py-2.5 px-3">
+                        <Badge variant="warning" className="animate-pulse">Active TCP Stream (Port 5000)</Badge>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -450,19 +458,21 @@ export const AdminDashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredResults.map((rec) => {
-                  const passed = rec.percentage >= 50.0
+                {filteredResults.map((rec, idx) => {
+                  const percentage = rec.percentage ?? 0
+                  const passed = percentage >= 50.0
+                  const recKey = rec.session_id || `rec-${idx}`
                   return (
-                    <tr key={rec.session_id} className="hover:bg-slate-50/60">
+                    <tr key={recKey} className="hover:bg-slate-50/60">
                       <td className="py-2.5 px-3 font-bold font-mono text-slate-900">
-                        {rec.student_id}
+                        {rec.student_id || "—"}
                       </td>
                       <td className="py-2.5 px-3 text-slate-800">{rec.name || "—"}</td>
                       <td className="py-2.5 px-3 font-semibold text-slate-700">
-                        {rec.score} / {rec.total_points}
+                        {rec.score ?? 0} / {rec.total_points ?? 0}
                       </td>
                       <td className="py-2.5 px-3 font-bold text-slate-900">
-                        {rec.percentage}%
+                        {formatPercent(percentage)}
                       </td>
                       <td className="py-2.5 px-3">
                         <Badge
@@ -474,7 +484,7 @@ export const AdminDashboard: React.FC = () => {
                               : "danger"
                           }
                         >
-                          {rec.status}
+                          {rec.status || "UNKNOWN"}
                         </Badge>
                       </td>
                       <td className="py-2.5 px-3">
